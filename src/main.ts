@@ -1,4 +1,4 @@
-import { assertContent, drillQueue, sentenceQueue, wordQueue } from "./content";
+import { assertContent, drillQueue, sentenceQueue, taleQueue, wordQueue } from "./content";
 import {
   accuracyOf,
   backspace,
@@ -45,7 +45,7 @@ let lastSecond = -1;
 let handledAt = 0;
 
 function beginQueue(): Session {
-  const queue = store.source === "words" ? wordQueue() : sentenceQueue();
+  const queue = store.source === "words" ? wordQueue() : store.source === "tales" ? taleQueue() : sentenceQueue();
   return createSession(queue, store.duration, store.gloss);
 }
 
@@ -104,6 +104,7 @@ function renderConfig(): void {
   const sources: [SourceMode, string][] = [
     ["sentences", "ประโยค"],
     ["words", "คำเดี่ยว"],
+    ["tales", "นิทาน"],
   ];
   configEl.innerHTML = [
     segment("โหมด", sources.map(([id, label]) => btn(label, store.source === id, `data-source="${id}"`)).join("")),
@@ -119,15 +120,20 @@ function renderConfig(): void {
   ].join("");
 }
 
-function letterHtml(wordTyped: string, expected: string, showCaret: boolean): string {
+function letterHtml(wordTyped: string, expected: string, showCaret: boolean, missed = false): string {
   const parts: string[] = [];
-  const overflow = showCaret && wordTyped.length >= expected.length;
+  const extra = wordTyped.slice(expected.length);
   for (let i = 0; i < expected.length; i++) {
     const typedHere = i < wordTyped.length;
-    const wrong = typedHere && wordTyped[i] !== expected[i];
+    const wrong = (typedHere && wordTyped[i] !== expected[i]) || (missed && !typedHere);
     const state = wrong ? "incorrect" : typedHere ? "correct" : "pending";
-    const next = showCaret && (overflow ? i === expected.length - 1 : i === wordTyped.length);
+    const filled = wordTyped.length >= expected.length;
+    const next = showCaret && extra.length === 0 && (i === wordTyped.length || (filled && i === expected.length - 1));
     parts.push(`<span class="letter ${state}${next ? " next" : ""}">${esc(expected[i])}</span>`);
+  }
+  for (let i = 0; i < extra.length; i++) {
+    const next = showCaret && i === extra.length - 1;
+    parts.push(`<span class="letter extra${next ? " next" : ""}">${esc(extra[i])}</span>`);
   }
   return parts.join("");
 }
@@ -145,7 +151,7 @@ function renderWords(now: number): void {
     if (current && now < session.rejectUntil) classes.push("reject");
     const vis = glossVis(session, i, now);
     html.push(
-      `<div class="${classes.join(" ")}"><div class="gloss" data-vis="${vis}">${esc(word.token.th)}</div><div class="letters" lang="en">${letterHtml(word.typed, word.token.en, current && session.phase !== "finished")}</div></div>`,
+      `<div class="${classes.join(" ")}"><div class="gloss" data-vis="${vis}">${esc(word.token.th)}</div><div class="letters" lang="en">${letterHtml(word.typed, word.token.en, current && session.phase !== "finished", word.completed && word.typed !== word.token.en)}</div></div>`,
     );
   }
   wordsEl.innerHTML = html.join("");
@@ -241,8 +247,10 @@ function render(): void {
   document.body.classList.toggle("running", session.phase === "running");
   document.body.classList.toggle("finished", finished);
   renderConfig();
-  bannerEl.hidden = session.banner.length === 0 || finished;
-  bannerEl.textContent = session.banner;
+  const tale = session.words[session.index]?.token.tale ?? "";
+  const banner = session.banner || tale;
+  bannerEl.hidden = banner.length === 0 || finished;
+  bannerEl.textContent = banner;
   maskEl.hidden = finished;
   resultsEl.hidden = !finished;
   if (finished) {
@@ -264,7 +272,7 @@ function render(): void {
       : store.gloss === "focus"
         ? "คำแปลชัดแค่คำที่กำลังพิมพ์กับคำถัดไป"
         : "คำแปลซ่อนอยู่ กด Alt ค้างหรือหยุดพิมพ์ครู่หนึ่งเพื่อดู";
-  hintEl.textContent = `${glossHint} · กดเว้นวรรคเมื่อคำถูก · ตัวพิมพ์เล็กใหญ่มีผล`;
+  hintEl.textContent = `${glossHint} · กดเว้นวรรคเพื่อไปคำถัดไป · ตัวพิมพ์เล็กใหญ่มีผล`;
 }
 
 function showThaiWarning(): void {

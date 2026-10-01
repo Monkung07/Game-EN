@@ -35,7 +35,7 @@ export interface Session {
 }
 
 const PEEK_IDLE_MS = 800;
-const MAX_EXTRA = 8;
+const MAX_EXTRA = 24;
 
 export function createSession(queue: Token[], durationSec: number, glossMode: GlossMode, banner = ""): Session {
   const session: Session = {
@@ -68,7 +68,7 @@ function fillAhead(session: Session, targetAhead: number): void {
     const token = session.queue[session.queuePos % session.queue.length];
     session.queuePos += 1;
     session.words.push({
-      token: { en: token.en, th: token.th, sentenceEnd: token.sentenceEnd },
+      token: { en: token.en, th: token.th, sentenceEnd: token.sentenceEnd, tale: token.tale },
       typed: "",
       hadError: false,
       completed: false,
@@ -81,17 +81,10 @@ export function correctCharCount(session: Session): number {
   for (let i = 0; i < session.words.length; i++) {
     const word = session.words[i];
     if (word.completed) {
-      count += word.token.en.length + 1;
+      count += word.typed === word.token.en ? word.token.en.length + 1 : matchedPrefix(word);
       continue;
     }
-    if (i === session.index) {
-      const { en } = word.token;
-      let matched = 0;
-      while (matched < word.typed.length && matched < en.length && word.typed[matched] === en[matched]) {
-        matched += 1;
-      }
-      count += matched;
-    }
+    if (i === session.index) count += matchedPrefix(word);
     break;
   }
   return count;
@@ -206,17 +199,22 @@ export function backspace(session: Session, now: number): void {
   word.typed = word.typed.slice(0, -1);
 }
 
+function matchedPrefix(word: WordState): number {
+  const { en } = word.token;
+  let matched = 0;
+  while (matched < word.typed.length && matched < en.length && word.typed[matched] === en[matched]) {
+    matched += 1;
+  }
+  return matched;
+}
+
 export function commitWord(session: Session, now: number): boolean {
   if (session.phase === "finished") return false;
   const word = session.words[session.index];
   if (!word) return false;
-  if (word.typed !== word.token.en) {
-    session.rejectUntil = now + 180;
-    session.lastInputAt = now;
-    return false;
-  }
   ensureRunning(session, now);
   session.lastInputAt = now;
+  if (word.typed !== word.token.en) word.hadError = true;
   word.completed = true;
   noteMiss(session, word);
   session.index += 1;

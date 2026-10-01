@@ -35,7 +35,7 @@ export function loadStore(): Store {
       weak: Array.isArray(parsed.weak) ? parsed.weak.filter(isWeak) : [],
       duration: parsed.duration === 15 || parsed.duration === 30 || parsed.duration === 60 ? parsed.duration : 30,
       gloss: parsed.gloss === "full" || parsed.gloss === "focus" || parsed.gloss === "peek" ? parsed.gloss : "focus",
-      source: parsed.source === "words" || parsed.source === "sentences" ? parsed.source : "sentences",
+      source: parsed.source === "words" || parsed.source === "sentences" || parsed.source === "tales" ? parsed.source : "sentences",
     };
   } catch {
     return { ...defaults, weak: [] };
