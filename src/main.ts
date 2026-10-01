@@ -106,8 +106,14 @@ function btn(label: string, active: boolean, attrs: string, disabled = false): s
   return `<button type="button" class="text-btn${active ? " active" : ""}" ${attrs}${disabled ? " disabled" : ""}>${label}</button>`;
 }
 
-function segment(label: string, buttons: string): string {
-  return `<div class="control"><span class="control-label">${label}</span><div class="segment">${buttons}</div></div>`;
+function segment(label: string, buttons: string, slot: string): string {
+  return `<div class="control" data-slot="${slot}"><span class="control-label">${label}</span><div class="segment">${buttons}</div></div>`;
+}
+
+function glossNote(): string {
+  if (store.gloss === "full") return "คำแปลโชว์ทุกคำ";
+  if (store.gloss === "focus") return "คำแปลชัดแค่คำนี้";
+  return "กด Alt เพื่อดูคำแปล";
 }
 
 function renderConfig(): void {
@@ -126,18 +132,19 @@ function renderConfig(): void {
     (level) => `<option value="${level}"${store.level === level ? " selected" : ""}>${level}</option>`,
   ).join("");
   configEl.innerHTML = [
-    segment("โหมด", sources.map(([id, label]) => btn(label, store.source === id, `data-source="${id}"`)).join("")),
-    segment("เวลา", times.map((time) => btn(`${time} วิ`, store.duration === time, `data-time="${time}"`)).join("")),
-    segment("คำแปล", glosses.map(([id, label]) => btn(label, store.gloss === id, `data-gloss="${id}"`)).join("")),
-    `<div class="control"><label class="control-label" for="level">ระดับ</label><div class="segment"><select id="level" class="level-select">${levelOptions}</select></div></div>`,
+    segment("โหมด", sources.map(([id, label]) => btn(label, store.source === id, `data-source="${id}"`)).join(""), "mode"),
+    segment("เวลา", times.map((time) => btn(`${time} วิ`, store.duration === time, `data-time="${time}"`)).join(""), "time"),
+    segment("คำแปล", glosses.map(([id, label]) => btn(label, store.gloss === id, `data-gloss="${id}"`)).join(""), "gloss"),
+    `<div class="control" data-slot="level"><label class="control-label" for="level">ระดับ</label><div class="segment"><select id="level" class="level-select">${levelOptions}</select></div></div>`,
+    `<p class="control-note">${glossNote()} · ตัวพิมพ์มีผล</p>`,
   ].join("");
 
   const weakDisabled = store.weak.length === 0;
   const slowDisabled = store.slow.length === 0;
   miniEl.innerHTML = [
+    `<button type="button" class="chip btn ghost" id="weak"${weakDisabled ? " disabled" : ""}>ซ้อมคำอ่อน ${store.weak.length}</button>`,
+    `<button type="button" class="chip btn ghost" id="slow"${slowDisabled ? " disabled" : ""}>ซ้อมคำช้า ${store.slow.length}</button>`,
     `<span class="chip streak${store.streak === 0 ? " cold" : ""}" aria-label="สตรีค ${store.streak} วัน"><svg class="flame" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.2 1.2c.3 1.8-.2 3-1.1 4-.4-1.3-1.5-2-1.5-2C4.2 4.6 3 6.4 3 8.4 3 11.2 5.2 13.5 8 13.5s5-2.3 5-5.1c0-2.4-1.5-4-2.6-5.2-.2 1.3-1 2.2-1.7 2.6.4-1.6.2-3.3-.5-4.6Z"/></svg>${store.streak}</span>`,
-    `<button type="button" class="chip" id="weak"${weakDisabled ? " disabled" : ""}>ซ้อมคำอ่อน ${store.weak.length}</button>`,
-    `<button type="button" class="chip" id="slow"${slowDisabled ? " disabled" : ""}>ซ้อมคำช้า ${store.slow.length}</button>`,
   ].join("");
 }
 
@@ -243,14 +250,12 @@ function renderResults(): void {
   resultsEl.innerHTML = `
     <div class="result-grid">
       <article class="stat"><span>ความเร็ว</span><strong>${Math.round(wpm)}</strong><small>คำต่อนาที</small></article>
-      <article class="stat"><span>ความเร็วดิบ</span><strong>${Math.round(rawWpm(session, elapsed))}</strong><small>รวมตัวผิดและตัวเกิน</small></article>
       <article class="stat"><span>ความแม่น</span><strong>${acc.toFixed(0)}%</strong><small>จากปุ่มที่กดถูก</small></article>
-      <article class="stat"><span>ความสม่ำเสมอ</span><strong>${Math.round(consistencyOf(session.samples))}%</strong><small>จากความเร็วแต่ละวินาที</small></article>
       <article class="stat"><span>สตรีค</span><strong>${store.streak}</strong><small>วันติดกัน</small></article>
     </div>
     ${record}
-    <p class="char-line">ถูก ${chars.correct} · ผิด ${chars.incorrect} · เกิน ${chars.extra}</p>
     <div class="chart-wrap">${chartSvg(session.samples)}</div>
+    <p class="stat-strip"><span>ความเร็วดิบ <strong>${Math.round(rawWpm(session, elapsed))}</strong></span><span>สม่ำเสมอ <strong>${Math.round(consistencyOf(session.samples))}%</strong></span><span>ถูก <strong>${chars.correct}</strong> · ผิด <strong>${chars.incorrect}</strong> · เกิน <strong>${chars.extra}</strong></span></p>
     ${
       session.missed.length
         ? `<div><p class="miss-title">คำที่ยังไม่คล่อง ${session.missed.length}</p><ul class="missed">${misses}</ul></div>`
@@ -332,13 +337,7 @@ function render(): void {
     hintEl.textContent = notes.length ? notes.join(" · ") : "รอบนี้พิมพ์ได้ครบ ไม่มีคำผิด";
     return;
   }
-  const glossHint =
-    store.gloss === "full"
-      ? "คำแปลโชว์ทุกคำ"
-      : store.gloss === "focus"
-        ? "คำแปลชัดแค่คำที่กำลังพิมพ์กับคำถัดไป"
-        : "คำแปลซ่อนอยู่ กด Alt ค้างหรือหยุดพิมพ์ครู่หนึ่งเพื่อดู";
-  hintEl.textContent = `${glossHint} · กดเว้นวรรคเพื่อไปคำถัดไป · ตัวพิมพ์เล็กใหญ่มีผล · Tab เริ่มรอบใหม่`;
+  hintEl.textContent = "เว้นวรรคไปคำถัดไป · Tab เริ่มรอบใหม่";
 }
 
 function showThaiWarning(): void {

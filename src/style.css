@@ -167,9 +167,12 @@ button {
   cursor: default;
 }
 
-.chip:not(:disabled):hover,
-#restart:hover,
-.btn.ghost:hover {
+#weak,
+#slow {
+  font-size: inherit;
+}
+
+.chip:not(:disabled):hover {
   border-color: #cbbfae;
   background: #faf6ee;
 }
@@ -180,7 +183,14 @@ button {
   flex-wrap: wrap;
   justify-content: flex-start;
   align-items: center;
-  gap: 0.7rem 1.1rem;
+  gap: 0.4rem 0.6rem;
+}
+
+.control-note {
+  flex: 1 0 100%;
+  margin: 0;
+  color: var(--muted);
+  font-size: 0.82rem;
 }
 
 .control {
@@ -271,7 +281,7 @@ main {
 
 .meter {
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: auto 1fr;
   gap: 0.75rem;
   align-items: center;
 }
@@ -460,11 +470,6 @@ body.has-scene .mask {
 }
 
 #restart {
-  border: 1px solid var(--line);
-  background: transparent;
-  color: var(--ink);
-  border-radius: 999px;
-  padding: 0.42rem 0.8rem;
   white-space: nowrap;
 }
 
@@ -517,9 +522,21 @@ body.finished #restart {
 }
 
 .char-line,
-.record-line {
+.record-line,
+.stat-strip {
   margin: 0;
   font-size: 0.92rem;
+}
+
+.stat-strip {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 1.1rem;
+  color: var(--muted);
+}
+
+.stat-strip strong {
+  color: var(--ink);
 }
 
 .char-line {
@@ -621,9 +638,15 @@ body.finished #restart {
 }
 
 .btn.ghost {
-  background: transparent;
-  border-color: var(--line);
-  color: var(--ink);
+  background: var(--card);
+  border-color: #cbbfae;
+  color: var(--accent);
+  font-weight: 700;
+}
+
+.btn.ghost:hover {
+  border-color: var(--accent);
+  background: var(--accent-soft);
 }
 
 .catcher {
@@ -653,6 +676,53 @@ body.finished #restart {
   }
 }
 
+@media (max-width: 880px) {
+  .controls {
+    display: grid;
+    grid-template-columns: max-content max-content;
+    grid-template-areas:
+      "mode level"
+      "time gloss"
+      "note note";
+    justify-content: start;
+    align-items: end;
+    column-gap: 0.7rem;
+    row-gap: 0.55rem;
+  }
+
+  .control {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: 0.22rem;
+  }
+
+  .segment {
+    flex-wrap: nowrap;
+    align-items: center;
+    min-height: 2.625rem;
+  }
+
+  .control[data-slot="mode"] {
+    grid-area: mode;
+  }
+
+  .control[data-slot="level"] {
+    grid-area: level;
+  }
+
+  .control[data-slot="time"] {
+    grid-area: time;
+  }
+
+  .control[data-slot="gloss"] {
+    grid-area: gloss;
+  }
+
+  .control-note {
+    grid-area: note;
+  }
+}
+
 @media (max-width: 720px) {
   #app {
     padding: 0.85rem 0.75rem 1rem;
@@ -669,6 +739,15 @@ body.finished #restart {
 
   .chips {
     justify-content: flex-start;
+  }
+
+  .controls {
+    column-gap: 0.35rem;
+  }
+
+  .text-btn {
+    padding: 0.3rem 0.32rem;
+    font-size: 0.88rem;
   }
 
   .stage {
