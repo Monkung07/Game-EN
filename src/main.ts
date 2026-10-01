@@ -14,6 +14,7 @@ import {
   wpmAt,
   type Session,
 } from "./engine";
+import { sceneView } from "./scenes";
 import { addWeak, loadStore, recordPractice, saveSettings } from "./storage";
 import type { Duration, GlossMode, SourceMode, Store, Token } from "./types";
 
@@ -24,6 +25,7 @@ const miniEl = document.querySelector<HTMLElement>("#mini")!;
 const bannerEl = document.querySelector<HTMLElement>("#banner")!;
 const warnEl = document.querySelector<HTMLElement>("#warn")!;
 const liveEl = document.querySelector<HTMLElement>("#live")!;
+const sceneEl = document.querySelector<HTMLElement>("#scene")!;
 const maskEl = document.querySelector<HTMLElement>("#mask")!;
 const wordsEl = document.querySelector<HTMLElement>("#words")!;
 const resultsEl = document.querySelector<HTMLElement>("#results")!;
@@ -156,6 +158,12 @@ function renderWords(now: number): void {
   }
   wordsEl.innerHTML = html.join("");
   const currentEl = wordsEl.querySelector<HTMLElement>(".word.current");
+  if (currentEl) {
+    const rowTop = currentEl.offsetTop;
+    for (const word of wordsEl.querySelectorAll<HTMLElement>(".word")) {
+      word.classList.toggle("later", word.offsetTop > rowTop + 2);
+    }
+  }
   wordsEl.style.transform = currentEl ? `translateY(-${currentEl.offsetTop}px)` : "";
   placeCaret();
 }
@@ -240,6 +248,30 @@ function updateMeter(now: number): void {
   }
 }
 
+function renderScene(finished: boolean): void {
+  const scene = finished ? "" : (session.words[session.index]?.token.scene ?? "");
+  document.body.classList.toggle("has-scene", scene.length > 0);
+  if (!scene) {
+    sceneEl.hidden = true;
+    sceneEl.dataset.scene = "";
+    return;
+  }
+  const view = sceneView(scene);
+  if (!view) {
+    sceneEl.hidden = true;
+    sceneEl.dataset.scene = "";
+    document.body.classList.remove("has-scene");
+    return;
+  }
+  sceneEl.hidden = false;
+  if (sceneEl.dataset.scene === scene) return;
+  sceneEl.dataset.scene = scene;
+  sceneEl.innerHTML = `<img src="${view.src}" alt="${esc(view.label)}">`;
+  sceneEl.classList.remove("swap");
+  void sceneEl.offsetWidth;
+  sceneEl.classList.add("swap");
+}
+
 function render(): void {
   const now = performance.now();
   if (session.phase === "finished") persist(session);
@@ -251,6 +283,7 @@ function render(): void {
   const banner = session.banner || tale;
   bannerEl.hidden = banner.length === 0 || finished;
   bannerEl.textContent = banner;
+  renderScene(finished);
   maskEl.hidden = finished;
   resultsEl.hidden = !finished;
   if (finished) {
@@ -297,7 +330,9 @@ function markHandled(): void {
 
 function onKeyDown(event: KeyboardEvent): void {
   if (event.key === "Alt") {
+    event.preventDefault();
     session.peekHold = true;
+    focusCatcher();
     render();
     return;
   }
@@ -410,10 +445,12 @@ resultsEl.addEventListener("click", (event) => {
 window.addEventListener("keydown", onKeyDown, true);
 window.addEventListener("keyup", (event) => {
   if (event.key === "Alt") {
+    event.preventDefault();
     session.peekHold = false;
+    focusCatcher();
     render();
   }
-});
+}, true);
 catcher.addEventListener("beforeinput", onBeforeInput);
 document.addEventListener("pointerdown", (event) => {
   const target = event.target as HTMLElement;

@@ -8,6 +8,7 @@ export interface Token {
   th: string;
   sentenceEnd?: boolean;
   tale?: string;
+  scene?: string;
 }
 
 export interface WeakWord extends Token {

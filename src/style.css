@@ -1,7 +1,7 @@
 :root {
   --bg: #e7dfd0;
   --ink: #3c342c;
-  --typed: #1a1612;
+  --typed: #7a5b45;
   --muted: #7a7066;
   --pending: #b7ad9f;
   --line: #ddd3c4;
@@ -255,6 +255,41 @@ main {
   border-radius: inherit;
 }
 
+.scene {
+  height: auto;
+  margin: 0 0 0.75rem;
+  display: flex;
+  justify-content: center;
+}
+
+.scene img {
+  width: min(100%, 38rem);
+  height: auto;
+  aspect-ratio: 16 / 9;
+  object-fit: cover;
+  border-radius: 1.15rem;
+  display: block;
+}
+
+.scene.swap img {
+  animation: scene-in 0.42s cubic-bezier(0.22, 0.8, 0.3, 1);
+}
+
+body.has-scene .mask {
+  height: 11.4rem;
+}
+
+@keyframes scene-in {
+  from {
+    opacity: 0;
+    transform: translateY(10px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
 .meter-label {
   margin: 0;
   color: var(--muted);
@@ -266,7 +301,6 @@ main {
   position: relative;
   height: 14.6rem;
   overflow: hidden;
-  mask-image: linear-gradient(#000 0, #000 78%, transparent 100%);
 }
 
 .slide-caret {
@@ -308,6 +342,10 @@ main {
 
 .word.current {
   background: transparent;
+}
+
+.word.later .gloss {
+  display: none;
 }
 
 .word.end {
@@ -358,10 +396,6 @@ main {
   color: var(--pending);
 }
 
-.word.current .letter.pending {
-  color: #6a6156;
-}
-
 .letter.incorrect,
 .letter.extra {
   color: var(--error);
@@ -383,6 +417,7 @@ main {
 
 #hint {
   margin: 0;
+  width: min(920px, 100%);
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -592,6 +627,14 @@ body.finished #restart {
     height: 11.4rem;
   }
 
+  body.has-scene .mask {
+    height: 9.2rem;
+  }
+
+  .scene img {
+    width: 100%;
+  }
+
   .gloss {
     font-size: 0.82rem;
     line-height: 1.15rem;
@@ -616,7 +659,8 @@ body.finished #restart {
 
 @media (prefers-reduced-motion: reduce) {
   .slide-caret,
-  .word.reject {
+  .word.reject,
+  .scene.swap img {
     animation: none;
   }
 }

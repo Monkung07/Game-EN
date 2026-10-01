@@ -297,10 +297,16 @@ export const sentences: Token[][] = [
   ]),
 ];
 
-function story(title: string, lines: [string, string][][]): Token[][] {
-  return lines.map((pairs) => {
+function story(title: string, lines: [string, string][][], scenes: string[]): Token[][] {
+  if (scenes.length !== lines.length) {
+    throw new Error(`${title}: ${scenes.length} scenes for ${lines.length} lines`);
+  }
+  return lines.map((pairs, index) => {
     const tokens = line(pairs);
-    for (const token of tokens) token.tale = title;
+    for (const token of tokens) {
+      token.tale = title;
+      token.scene = scenes[index];
+    }
     return tokens;
   });
 }
@@ -403,6 +409,16 @@ export const tales: Token[][] = [
       ["happy", "ดีใจ"],
       ["lion", "สิงโต"],
     ],
+  ], [
+    "lion-sleep",
+    "lion-paw",
+    "lion-catch",
+    "lion-please",
+    "lion-lets",
+    "lion-net",
+    "lion-runs",
+    "lion-bites",
+    "lion-thanks",
   ]),
   ...story("เต่ากับกระต่าย", [
     [
@@ -495,6 +511,15 @@ export const tales: Token[][] = [
       ["sunny", "แจ่มใส"],
       ["day", "นั้น"],
     ],
+  ], [
+    "hare-laugh",
+    "hare-start",
+    "hare-ahead",
+    "hare-sleep",
+    "tortoise-walk",
+    "tortoise-pass",
+    "hare-late",
+    "tortoise-win",
   ]),
   ...story("เด็กหญิงผ้าคลุมแดง", [
     [
@@ -600,6 +625,16 @@ export const tales: Token[][] = [
       ["wolf", "หมาป่า"],
       ["away", "ออกไป"],
     ],
+  ], [
+    "red-walk",
+    "red-basket",
+    "red-stop",
+    "red-ask",
+    "red-answer",
+    "wolf-house",
+    "wolf-bed",
+    "red-eyes",
+    "hunter",
   ]),
 ];
 

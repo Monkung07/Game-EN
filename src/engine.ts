@@ -68,7 +68,7 @@ function fillAhead(session: Session, targetAhead: number): void {
     const token = session.queue[session.queuePos % session.queue.length];
     session.queuePos += 1;
     session.words.push({
-      token: { en: token.en, th: token.th, sentenceEnd: token.sentenceEnd, tale: token.tale },
+      token: { en: token.en, th: token.th, sentenceEnd: token.sentenceEnd, tale: token.tale, scene: token.scene },
       typed: "",
       hadError: false,
       completed: false,
