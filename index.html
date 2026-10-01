@@ -1,0 +1,51 @@
+<!doctype html>
+<html lang="th">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <meta name="theme-color" content="#e7dfd0" />
+    <title>TypeGloss — พิมพ์อังกฤษพร้อมคำแปลไทย</title>
+    <link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect rx='8' fill='%237a5b45' width='32' height='32'/%3E%3Ctext y='22' x='5' fill='%23f4efe4' font-size='16' font-family='Georgia'%3EAa%3C/text%3E%3C/svg%3E" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Atkinson+Hyperlegible:wght@400;700&family=Noto+Sans+Thai:wght@400;500;600&display=swap" rel="stylesheet" />
+    <link rel="stylesheet" href="/src/style.css" />
+  </head>
+  <body>
+    <div id="app">
+      <header class="top">
+        <div class="brand-block">
+          <span class="mark" aria-hidden="true">Aa</span>
+          <div>
+            <p class="brand">TypeGloss</p>
+            <p class="tagline">พิมพ์อังกฤษ แล้วเห็นความหมายไปด้วย</p>
+          </div>
+        </div>
+        <div id="mini" class="chips"></div>
+      </header>
+      <div id="config" class="controls"></div>
+      <main>
+        <section class="stage">
+          <div class="stage-head">
+            <p id="hint"></p>
+            <p id="banner" class="banner" hidden></p>
+            <p id="warn" class="warn" hidden>สลับแป้นพิมพ์เป็นภาษาอังกฤษก่อนนะ</p>
+            <div id="meter" class="meter">
+              <div class="meter-track" aria-hidden="true"><span id="meter-fill"></span></div>
+              <p id="live" class="meter-label"></p>
+            </div>
+          </div>
+          <div id="mask" class="mask">
+            <div id="words" class="words"></div>
+          </div>
+          <section id="results" class="results" hidden></section>
+          <div class="stage-foot">
+            <button id="restart" type="button">เริ่มรอบใหม่</button>
+          </div>
+        </section>
+      </main>
+    </div>
+    <input id="catcher" class="catcher" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="ช่องพิมพ์" />
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>
