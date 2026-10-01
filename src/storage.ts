@@ -1,4 +1,4 @@
-import type { Duration, GlossMode, SourceMode, Store, Token, WeakWord } from "./types";
+import { LEVELS, type Duration, type GlossMode, type Level, type SourceMode, type Store, type Token, type WeakWord } from "./types";
 
 const KEY = "typegloss";
 
@@ -9,6 +9,7 @@ const defaults: Store = {
   duration: 30,
   gloss: "focus",
   source: "sentences",
+  level: "A1",
 };
 
 function dayKey(date = new Date()): string {
@@ -36,6 +37,7 @@ export function loadStore(): Store {
       duration: parsed.duration === 15 || parsed.duration === 30 || parsed.duration === 60 ? parsed.duration : 30,
       gloss: parsed.gloss === "full" || parsed.gloss === "focus" || parsed.gloss === "peek" ? parsed.gloss : "focus",
       source: parsed.source === "words" || parsed.source === "sentences" || parsed.source === "tales" ? parsed.source : "sentences",
+      level: typeof parsed.level === "string" && (LEVELS as readonly string[]).includes(parsed.level) ? (parsed.level as Level) : "A1",
     };
   } catch {
     return { ...defaults, weak: [] };
@@ -52,11 +54,12 @@ export function saveStore(store: Store): void {
   localStorage.setItem(KEY, JSON.stringify(store));
 }
 
-export function saveSettings(duration: Duration, gloss: GlossMode, source: SourceMode): Store {
+export function saveSettings(duration: Duration, gloss: GlossMode, source: SourceMode, level: Level): Store {
   const store = loadStore();
   store.duration = duration;
   store.gloss = gloss;
   store.source = source;
+  store.level = level;
   saveStore(store);
   return store;
 }

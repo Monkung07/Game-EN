@@ -16,7 +16,7 @@ import {
 } from "./engine";
 import { sceneView } from "./scenes";
 import { addWeak, loadStore, recordPractice, saveSettings } from "./storage";
-import type { Duration, GlossMode, SourceMode, Store, Token } from "./types";
+import { LEVELS, type Duration, type GlossMode, type Level, type SourceMode, type Store, type Token } from "./types";
 
 assertContent();
 
@@ -47,7 +47,8 @@ let lastSecond = -1;
 let handledAt = 0;
 
 function beginQueue(): Session {
-  const queue = store.source === "words" ? wordQueue() : store.source === "tales" ? taleQueue() : sentenceQueue();
+  const queue =
+    store.source === "words" ? wordQueue(store.level) : store.source === "tales" ? taleQueue(store.level) : sentenceQueue(store.level);
   return createSession(queue, store.duration, store.gloss);
 }
 
@@ -108,11 +109,14 @@ function renderConfig(): void {
     ["words", "คำเดี่ยว"],
     ["tales", "นิทาน"],
   ];
+  const levelOptions = LEVELS.map(
+    (level) => `<option value="${level}"${store.level === level ? " selected" : ""}>${level}</option>`,
+  ).join("");
   configEl.innerHTML = [
     segment("โหมด", sources.map(([id, label]) => btn(label, store.source === id, `data-source="${id}"`)).join("")),
     segment("เวลา", times.map((time) => btn(`${time} วิ`, store.duration === time, `data-time="${time}"`)).join("")),
     segment("คำแปล", glosses.map(([id, label]) => btn(label, store.gloss === id, `data-gloss="${id}"`)).join("")),
-    `<span class="level-pill">ระดับ A1</span>`,
+    `<div class="control"><label class="control-label" for="level">ระดับ</label><div class="segment"><select id="level" class="level-select">${levelOptions}</select></div></div>`,
   ].join("");
 
   const weakDisabled = store.weak.length === 0;
@@ -402,24 +406,36 @@ configEl.addEventListener("click", (event) => {
   const time = target.dataset.time;
   const gloss = target.dataset.gloss as GlossMode | undefined;
   if (source && source !== store.source) {
-    store = saveSettings(store.duration, store.gloss, source);
+    store = saveSettings(store.duration, store.gloss, source, store.level);
     restart();
     return;
   }
   if (time) {
     const duration = Number(time) as Duration;
     if (duration !== store.duration) {
-      store = saveSettings(duration, store.gloss, store.source);
+      store = saveSettings(duration, store.gloss, store.source, store.level);
       restart();
     } else focusCatcher();
     return;
   }
   if (gloss && gloss !== store.gloss) {
-    store = saveSettings(store.duration, gloss, store.source);
+    store = saveSettings(store.duration, gloss, store.source, store.level);
     session.glossMode = gloss;
     render();
   }
   focusCatcher();
+});
+
+configEl.addEventListener("change", (event) => {
+  const select = event.target;
+  if (!(select instanceof HTMLSelectElement) || select.id !== "level") return;
+  const level = select.value as Level;
+  if (!(LEVELS as readonly string[]).includes(level) || level === store.level) {
+    focusCatcher();
+    return;
+  }
+  store = saveSettings(store.duration, store.gloss, store.source, level);
+  restart();
 });
 
 miniEl.addEventListener("click", (event) => {
