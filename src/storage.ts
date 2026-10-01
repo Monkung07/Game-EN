@@ -1,4 +1,4 @@
-import { LEVELS, type Duration, type GlossMode, type Level, type SourceMode, type Store, type Token, type WeakWord } from "./types";
+import { LEVELS, type Best, type Duration, type GlossMode, type Level, type SourceMode, type Store, type Token, type WeakWord } from "./types";
 
 const KEY = "typegloss";
 
@@ -6,6 +6,8 @@ const defaults: Store = {
   streak: 0,
   lastDay: "",
   weak: [],
+  slow: [],
+  bests: {},
   duration: 30,
   gloss: "focus",
   source: "sentences",
@@ -28,20 +30,37 @@ function yesterdayKey(): string {
 export function loadStore(): Store {
   try {
     const raw = localStorage.getItem(KEY);
-    if (!raw) return { ...defaults, weak: [] };
+    if (!raw) return freshStore();
     const parsed = JSON.parse(raw) as Partial<Store>;
     return {
       streak: typeof parsed.streak === "number" ? parsed.streak : 0,
       lastDay: typeof parsed.lastDay === "string" ? parsed.lastDay : "",
       weak: Array.isArray(parsed.weak) ? parsed.weak.filter(isWeak) : [],
+      slow: Array.isArray(parsed.slow) ? parsed.slow.filter(isWeak) : [],
+      bests: readBests(parsed.bests),
       duration: parsed.duration === 15 || parsed.duration === 30 || parsed.duration === 60 ? parsed.duration : 30,
       gloss: parsed.gloss === "full" || parsed.gloss === "focus" || parsed.gloss === "peek" ? parsed.gloss : "focus",
       source: parsed.source === "words" || parsed.source === "sentences" || parsed.source === "tales" ? parsed.source : "sentences",
       level: typeof parsed.level === "string" && (LEVELS as readonly string[]).includes(parsed.level) ? (parsed.level as Level) : "A1",
     };
   } catch {
-    return { ...defaults, weak: [] };
+    return freshStore();
   }
+}
+
+function freshStore(): Store {
+  return { ...defaults, weak: [], slow: [], bests: {} };
+}
+
+function readBests(value: unknown): Record<string, Best> {
+  if (!value || typeof value !== "object") return {};
+  const bests: Record<string, Best> = {};
+  for (const [key, item] of Object.entries(value)) {
+    if (!item || typeof item !== "object") continue;
+    const best = item as Best;
+    if (typeof best.wpm === "number" && typeof best.acc === "number") bests[key] = { wpm: best.wpm, acc: best.acc };
+  }
+  return bests;
 }
 
 function isWeak(value: unknown): value is WeakWord {
@@ -76,13 +95,46 @@ export function recordPractice(): Store {
 
 export function addWeak(tokens: Token[]): Store {
   const store = loadStore();
-  for (const token of tokens) {
-    const found = store.weak.find((word) => word.en === token.en && word.th === token.th);
-    if (found) found.count += 1;
-    else store.weak.push({ en: token.en, th: token.th, count: 1 });
-  }
-  store.weak.sort((a, b) => b.count - a.count);
-  store.weak = store.weak.slice(0, 80);
+  pushWords(store.weak, tokens);
   saveStore(store);
   return store;
+}
+
+export function addSlow(tokens: Token[]): Store {
+  const store = loadStore();
+  pushWords(store.slow, tokens);
+  saveStore(store);
+  return store;
+}
+
+function pushWords(bank: WeakWord[], tokens: Token[]): void {
+  for (const token of tokens) {
+    const found = bank.find((word) => word.en === token.en && word.th === token.th);
+    if (found) found.count += 1;
+    else bank.push({ en: token.en, th: token.th, count: 1 });
+  }
+  bank.sort((a, b) => b.count - a.count);
+  bank.splice(80);
+}
+
+export function bestKey(source: SourceMode, level: Level, duration: Duration): string {
+  return `${source}:${level}:${duration}`;
+}
+
+export function recordBest(
+  source: SourceMode,
+  level: Level,
+  duration: Duration,
+  wpm: number,
+  acc: number,
+): { store: Store; isRecord: boolean; bestWpm: number } {
+  const store = loadStore();
+  const key = bestKey(source, level, duration);
+  const prev = store.bests[key];
+  const isRecord = wpm > 0 && (!prev || wpm > prev.wpm);
+  if (isRecord) {
+    store.bests[key] = { wpm, acc };
+    saveStore(store);
+  }
+  return { store, isRecord, bestWpm: store.bests[key]?.wpm ?? 0 };
 }

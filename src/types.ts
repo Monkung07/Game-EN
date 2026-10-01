@@ -17,10 +17,17 @@ export interface WeakWord extends Token {
   count: number;
 }
 
+export interface Best {
+  wpm: number;
+  acc: number;
+}
+
 export interface Store {
   streak: number;
   lastDay: string;
   weak: WeakWord[];
+  slow: WeakWord[];
+  bests: Record<string, Best>;
   duration: Duration;
   gloss: GlossMode;
   source: SourceMode;

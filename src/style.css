@@ -144,6 +144,24 @@ button {
   color: var(--muted);
 }
 
+.streak {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.32rem;
+  color: var(--ink);
+  font-weight: 700;
+}
+
+.flame {
+  width: 0.95rem;
+  height: 0.95rem;
+  fill: #c45c28;
+}
+
+.streak.cold .flame {
+  fill: var(--pending);
+}
+
 .chip:disabled {
   opacity: 0.45;
   cursor: default;
@@ -498,6 +516,21 @@ body.finished #restart {
   font-size: 0.8rem;
 }
 
+.char-line,
+.record-line {
+  margin: 0;
+  font-size: 0.92rem;
+}
+
+.char-line {
+  color: var(--muted);
+}
+
+.record-line {
+  color: var(--accent);
+  font-weight: 700;
+}
+
 .chart-wrap {
   background: var(--panel);
   border-radius: 1rem;
@@ -673,6 +706,10 @@ body.finished #restart {
   .meter {
     grid-template-columns: 1fr;
     gap: 0.35rem;
+  }
+
+  .meter-label {
+    white-space: normal;
   }
 }
 

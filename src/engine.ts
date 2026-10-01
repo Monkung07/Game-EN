@@ -5,6 +5,8 @@ export interface WordState {
   typed: string;
   hadError: boolean;
   completed: boolean;
+  startedAt: number | null;
+  elapsedMs: number;
 }
 
 export interface MissedWord {
@@ -32,6 +34,8 @@ export interface Session {
   banner: string;
   queue: Token[];
   queuePos: number;
+  isRecord: boolean;
+  bestWpm: number;
 }
 
 const PEEK_IDLE_MS = 800;
@@ -57,6 +61,8 @@ export function createSession(queue: Token[], durationSec: number, glossMode: Gl
     banner,
     queue,
     queuePos: 0,
+    isRecord: false,
+    bestWpm: 0,
   };
   fillAhead(session, 80);
   return session;
@@ -72,6 +78,8 @@ function fillAhead(session: Session, targetAhead: number): void {
       typed: "",
       hadError: false,
       completed: false,
+      startedAt: null,
+      elapsedMs: 0,
     });
   }
 }
@@ -94,6 +102,59 @@ export function wpmAt(correct: number, elapsedMs: number): number {
   const minutes = elapsedMs / 60000;
   if (minutes <= 0 || correct <= 0) return 0;
   return correct / 5 / minutes;
+}
+
+export interface CharStats {
+  correct: number;
+  incorrect: number;
+  extra: number;
+}
+
+export function charStats(session: Session): CharStats {
+  let correct = 0;
+  let incorrect = 0;
+  let extra = 0;
+  for (let i = 0; i < session.words.length; i++) {
+    const word = session.words[i];
+    if (!word.completed && i !== session.index) break;
+    if (i === session.index && !word.completed && word.typed.length === 0) break;
+    const { en } = word.token;
+    const end = Math.min(word.typed.length, en.length);
+    let matched = 0;
+    for (let c = 0; c < end; c++) {
+      if (word.typed[c] === en[c]) matched += 1;
+      else incorrect += 1;
+    }
+    correct += word.completed && word.typed === en ? en.length + 1 : matched;
+    if (word.typed.length > en.length) extra += word.typed.length - en.length;
+    if (!word.completed) break;
+  }
+  return { correct, incorrect, extra };
+}
+
+export function consistencyOf(samples: number[]): number {
+  if (samples.length < 2) return 0;
+  const mean = samples.reduce((sum, value) => sum + value, 0) / samples.length;
+  if (mean <= 0) return 0;
+  const variance = samples.reduce((sum, value) => sum + (value - mean) ** 2, 0) / samples.length;
+  const spread = Math.sqrt(variance) / mean;
+  return Math.max(0, Math.min(100, 100 - spread * 100));
+}
+
+export function rawWpm(session: Session, elapsedMs: number): number {
+  const stats = charStats(session);
+  return wpmAt(stats.correct + stats.incorrect + stats.extra, elapsedMs);
+}
+
+export function slowWords(session: Session): Token[] {
+  const correct = session.words.filter((word) => word.completed && word.typed === word.token.en && word.elapsedMs > 0);
+  if (correct.length < 2) return [];
+  const times = correct.map((word) => word.elapsedMs).sort((a, b) => a - b);
+  const mid = Math.floor(times.length / 2);
+  const median = times.length % 2 === 1 ? times[mid] : (times[mid - 1] + times[mid]) / 2;
+  return correct
+    .filter((word) => word.elapsedMs > median)
+    .map((word) => ({ en: word.token.en, th: word.token.th }));
 }
 
 export function accuracyOf(session: Session): number {
@@ -181,6 +242,7 @@ export function typeChar(session: Session, char: string, now: number): void {
   session.lastInputAt = now;
   const word = session.words[session.index];
   if (!word) return;
+  if (word.startedAt == null) word.startedAt = now;
   if (word.typed.length >= word.token.en.length + MAX_EXTRA) return;
   const expected = word.token.en[word.typed.length];
   if (expected !== char) {
@@ -215,6 +277,7 @@ export function commitWord(session: Session, now: number): boolean {
   ensureRunning(session, now);
   session.lastInputAt = now;
   if (word.typed !== word.token.en) word.hadError = true;
+  if (word.startedAt != null) word.elapsedMs = now - word.startedAt;
   word.completed = true;
   noteMiss(session, word);
   session.index += 1;

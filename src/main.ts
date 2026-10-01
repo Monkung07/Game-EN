@@ -2,20 +2,24 @@ import { assertContent, drillQueue, sentenceQueue, taleQueue, wordQueue } from "
 import {
   accuracyOf,
   backspace,
+  charStats,
   commitWord,
+  consistencyOf,
   correctCharCount,
   createSession,
   glossVis,
   hasTyped,
   isPeeking,
+  rawWpm,
   remainingMs,
+  slowWords,
   tick,
   typeChar,
   wpmAt,
   type Session,
 } from "./engine";
 import { sceneView } from "./scenes";
-import { addWeak, loadStore, recordPractice, saveSettings } from "./storage";
+import { addSlow, addWeak, loadStore, recordBest, recordPractice, saveSettings } from "./storage";
 import { LEVELS, type Duration, type GlossMode, type Level, type SourceMode, type Store, type Token } from "./types";
 
 assertContent();
@@ -74,6 +78,15 @@ function persist(finished: Session): void {
     );
     store = addWeak(tokens);
   }
+  const slow = slowWords(finished);
+  if (slow.length > 0) store = addSlow(slow);
+  if (!finished.banner) {
+    const elapsed = finished.durationMs;
+    const saved = recordBest(store.source, store.level, store.duration, wpmAt(correctCharCount(finished), elapsed), accuracyOf(finished));
+    store = saved.store;
+    finished.isRecord = saved.isRecord;
+    finished.bestWpm = saved.bestWpm;
+  }
   store = recordPractice();
 }
 
@@ -120,9 +133,11 @@ function renderConfig(): void {
   ].join("");
 
   const weakDisabled = store.weak.length === 0;
+  const slowDisabled = store.slow.length === 0;
   miniEl.innerHTML = [
-    `<span class="chip quiet">สตรีค ${store.streak} วัน</span>`,
+    `<span class="chip streak${store.streak === 0 ? " cold" : ""}" aria-label="สตรีค ${store.streak} วัน"><svg class="flame" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.2 1.2c.3 1.8-.2 3-1.1 4-.4-1.3-1.5-2-1.5-2C4.2 4.6 3 6.4 3 8.4 3 11.2 5.2 13.5 8 13.5s5-2.3 5-5.1c0-2.4-1.5-4-2.6-5.2-.2 1.3-1 2.2-1.7 2.6.4-1.6.2-3.3-.5-4.6Z"/></svg>${store.streak}</span>`,
     `<button type="button" class="chip" id="weak"${weakDisabled ? " disabled" : ""}>ซ้อมคำอ่อน ${store.weak.length}</button>`,
+    `<button type="button" class="chip" id="slow"${slowDisabled ? " disabled" : ""}>ซ้อมคำช้า ${store.slow.length}</button>`,
   ].join("");
 }
 
@@ -213,18 +228,28 @@ function renderResults(): void {
   const elapsed = session.durationMs;
   const wpm = wpmAt(correctCharCount(session), elapsed);
   const acc = accuracyOf(session);
+  const chars = charStats(session);
+  const slow = slowWords(session);
   const misses = session.missed
     .map(
       (item) =>
         `<li><span class="en">${esc(item.en)}</span><span aria-hidden="true">·</span><span class="th">${esc(item.th)}</span>${item.count > 1 ? `<span class="times">${item.count}</span>` : ""}</li>`,
     )
     .join("");
+  const record =
+    session.bestWpm > 0
+      ? `<p class="${session.isRecord ? "record-line" : "char-line"}">${session.isRecord ? "สถิติใหม่" : "สถิติสูงสุด"} ${Math.round(session.bestWpm)} คำต่อนาที</p>`
+      : "";
   resultsEl.innerHTML = `
     <div class="result-grid">
       <article class="stat"><span>ความเร็ว</span><strong>${Math.round(wpm)}</strong><small>คำต่อนาที</small></article>
+      <article class="stat"><span>ความเร็วดิบ</span><strong>${Math.round(rawWpm(session, elapsed))}</strong><small>รวมตัวผิดและตัวเกิน</small></article>
       <article class="stat"><span>ความแม่น</span><strong>${acc.toFixed(0)}%</strong><small>จากปุ่มที่กดถูก</small></article>
+      <article class="stat"><span>ความสม่ำเสมอ</span><strong>${Math.round(consistencyOf(session.samples))}%</strong><small>จากความเร็วแต่ละวินาที</small></article>
       <article class="stat"><span>สตรีค</span><strong>${store.streak}</strong><small>วันติดกัน</small></article>
     </div>
+    ${record}
+    <p class="char-line">ถูก ${chars.correct} · ผิด ${chars.incorrect} · เกิน ${chars.extra}</p>
     <div class="chart-wrap">${chartSvg(session.samples)}</div>
     ${
       session.missed.length
@@ -234,6 +259,7 @@ function renderResults(): void {
     <div class="result-actions">
       <button type="button" class="btn primary" id="again">เล่นอีกรอบ</button>
       ${session.missed.length ? `<button type="button" class="btn ghost" id="drill">ซ้อมเฉพาะคำที่พลาด</button>` : ""}
+      ${slow.length ? `<button type="button" class="btn ghost" id="slow-drill">ซ้อมคำที่ช้า</button>` : ""}
     </div>
   `;
 }
@@ -244,9 +270,11 @@ function updateMeter(now: number): void {
   if (finished) return;
   const ratio = session.phase === "ready" ? 1 : remainingMs(session, now) / session.durationMs;
   meterFill.style.transform = `scaleX(${Math.max(0, Math.min(1, ratio))})`;
-  if (session.phase === "running") {
+  if (session.phase === "running" && session.startedAt != null) {
     const secs = Math.ceil(remainingMs(session, now) / 1000);
-    liveEl.textContent = `เหลือ ${secs} วินาที`;
+    const elapsed = now - session.startedAt;
+    const wpm = elapsed >= 1000 ? ` · ${Math.round(wpmAt(correctCharCount(session), elapsed))} คำต่อนาที` : "";
+    liveEl.textContent = `เหลือ ${secs} วินาที${wpm}`;
   } else {
     liveEl.textContent = "พิมพ์ตัวแรกเพื่อเริ่มจับเวลา";
   }
@@ -298,9 +326,10 @@ function render(): void {
   }
   updateMeter(now);
   if (finished) {
-    hintEl.textContent = session.missed.length
-      ? "คำที่พลาดถูกเก็บไว้ในคลังคำอ่อนแล้ว"
-      : "รอบนี้พิมพ์ได้ครบ ไม่มีคำผิด";
+    const notes: string[] = [];
+    if (session.missed.length) notes.push("คำที่พลาดถูกเก็บไว้ในคลังคำอ่อนแล้ว");
+    if (slowWords(session).length) notes.push("คำที่ช้าถูกเก็บไว้แล้ว");
+    hintEl.textContent = notes.length ? notes.join(" · ") : "รอบนี้พิมพ์ได้ครบ ไม่มีคำผิด";
     return;
   }
   const glossHint =
@@ -309,7 +338,7 @@ function render(): void {
       : store.gloss === "focus"
         ? "คำแปลชัดแค่คำที่กำลังพิมพ์กับคำถัดไป"
         : "คำแปลซ่อนอยู่ กด Alt ค้างหรือหยุดพิมพ์ครู่หนึ่งเพื่อดู";
-  hintEl.textContent = `${glossHint} · กดเว้นวรรคเพื่อไปคำถัดไป · ตัวพิมพ์เล็กใหญ่มีผล`;
+  hintEl.textContent = `${glossHint} · กดเว้นวรรคเพื่อไปคำถัดไป · ตัวพิมพ์เล็กใหญ่มีผล · Tab เริ่มรอบใหม่`;
 }
 
 function showThaiWarning(): void {
@@ -340,9 +369,10 @@ function onKeyDown(event: KeyboardEvent): void {
     render();
     return;
   }
-  if (event.key === "Escape") {
+  if (event.key === "Escape" || event.key === "Tab") {
     event.preventDefault();
     restart();
+    focusCatcher();
     return;
   }
   if (event.ctrlKey || event.metaKey || event.altKey) return;
@@ -439,9 +469,10 @@ configEl.addEventListener("change", (event) => {
 });
 
 miniEl.addEventListener("click", (event) => {
-  const target = (event.target as HTMLElement).closest<HTMLButtonElement>("#weak");
-  if (!target || store.weak.length === 0) return;
-  beginDrill(store.weak, "ซ้อมคำอ่อน");
+  const target = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
+  if (!target) return;
+  if (target.id === "weak" && store.weak.length > 0) beginDrill(store.weak, "ซ้อมคำอ่อน");
+  if (target.id === "slow" && store.slow.length > 0) beginDrill(store.slow, "ซ้อมคำช้า");
 });
 
 document.querySelector("#restart")!.addEventListener("click", () => restart());
@@ -456,6 +487,7 @@ resultsEl.addEventListener("click", (event) => {
       "ซ้อมคำที่พลาด",
     );
   }
+  if (target.id === "slow-drill") beginDrill(slowWords(session), "ซ้อมคำช้า");
 });
 
 window.addEventListener("keydown", onKeyDown, true);
