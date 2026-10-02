@@ -66,7 +66,60 @@ function readBests(value: unknown): Record<string, Best> {
 function isWeak(value: unknown): value is WeakWord {
   if (!value || typeof value !== "object") return false;
   const word = value as WeakWord;
-  return typeof word.en === "string" && typeof word.th === "string" && typeof word.count === "number";
+  if (typeof word.en !== "string" || typeof word.th !== "string" || typeof word.count !== "number") return false;
+  const step = word.step === 1 || word.step === 2 ? word.step : 0;
+  word.step = step;
+  word.due = typeof word.due === "string" && /^\d{4}-\d{2}-\d{2}$/.test(word.due) ? word.due : dayKey();
+  return true;
+}
+
+const INTERVALS = [1, 3, 7];
+
+function addDays(base: string, days: number): string {
+  const [year, month, day] = base.split("-").map(Number);
+  const date = new Date(year, month - 1, day);
+  date.setDate(date.getDate() + days);
+  return dayKey(date);
+}
+
+function schedule(word: WeakWord, correct: boolean, today: string): void {
+  if (!correct) {
+    word.step = 0;
+    word.due = addDays(today, 1);
+    return;
+  }
+  const index = Math.min(Math.max(word.step, 0), INTERVALS.length - 1);
+  word.due = addDays(today, INTERVALS[index]);
+  word.step = Math.min(index + 1, INTERVALS.length - 1);
+}
+
+export function dueTokens(store: Store): Token[] {
+  const today = dayKey();
+  const ranked = [...store.weak, ...store.slow]
+    .filter((word) => word.due <= today)
+    .sort((a, b) => a.due.localeCompare(b.due) || b.count - a.count);
+  const seen = new Set<string>();
+  const out: Token[] = [];
+  for (const word of ranked) {
+    const key = `${word.en}\0${word.th}`;
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push({ en: word.en, th: word.th });
+  }
+  return out;
+}
+
+export function gradeBanks(items: { en: string; th: string; correct: boolean }[]): Store {
+  const store = loadStore();
+  const today = dayKey();
+  for (const item of items) {
+    for (const bank of [store.weak, store.slow]) {
+      const found = bank.find((word) => word.en === item.en && word.th === item.th);
+      if (found) schedule(found, item.correct, today);
+    }
+  }
+  saveStore(store);
+  return store;
 }
 
 export function saveStore(store: Store): void {
@@ -111,7 +164,7 @@ function pushWords(bank: WeakWord[], tokens: Token[]): void {
   for (const token of tokens) {
     const found = bank.find((word) => word.en === token.en && word.th === token.th);
     if (found) found.count += 1;
-    else bank.push({ en: token.en, th: token.th, count: 1 });
+    else bank.push({ en: token.en, th: token.th, count: 1, due: dayKey(), step: 0 });
   }
   bank.sort((a, b) => b.count - a.count);
   bank.splice(80);

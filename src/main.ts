@@ -19,7 +19,7 @@ import {
   type Session,
 } from "./engine";
 import { sceneView } from "./scenes";
-import { addSlow, addWeak, loadStore, recordBest, recordPractice, saveSettings } from "./storage";
+import { addSlow, addWeak, dueTokens, gradeBanks, loadStore, recordBest, recordPractice, saveSettings } from "./storage";
 import { LEVELS, type Duration, type GlossMode, type Level, type SourceMode, type Store, type Token } from "./types";
 
 assertContent();
@@ -68,6 +68,17 @@ function restart(): void {
   focusCatcher();
 }
 
+function replaySet(): void {
+  const tokens = playedTokens(session);
+  if (tokens.length === 0) return;
+  const prior = wpmAt(correctCharCount(session), session.durationMs);
+  const next = createSession(tokens, store.duration, store.gloss);
+  next.priorWpm = prior;
+  session = next;
+  render();
+  focusCatcher();
+}
+
 function persist(finished: Session): void {
   if (finished.saved) return;
   finished.saved = true;
@@ -80,6 +91,7 @@ function persist(finished: Session): void {
   }
   const slow = slowWords(finished);
   if (slow.length > 0) store = addSlow(slow);
+  store = gradeBanks(scheduleItems(finished));
   if (!finished.banner) {
     const elapsed = finished.durationMs;
     const saved = recordBest(store.source, store.level, store.duration, wpmAt(correctCharCount(finished), elapsed), accuracyOf(finished));
@@ -111,9 +123,41 @@ function segment(label: string, buttons: string, slot: string): string {
 }
 
 function glossNote(): string {
-  if (store.gloss === "full") return "คำแปลโชว์ทุกคำ";
-  if (store.gloss === "focus") return "คำแปลชัดแค่คำนี้";
-  return "กด Alt เพื่อดูคำแปล";
+  const gloss = store.gloss === "full" ? "คำแปลโชว์ทุกคำ" : store.gloss === "focus" ? "คำแปลชัดแค่คำนี้" : "กด Alt เพื่อดูคำแปล";
+  return `${gloss} · ตัวพิมพ์มีผล`;
+}
+
+function scheduleItems(finished: Session): { en: string; th: string; correct: boolean }[] {
+  const last = new Map<string, { en: string; th: string; correct: boolean }>();
+  for (const word of finished.words) {
+    if (!word.completed) continue;
+    const key = `${word.token.en}\0${word.token.th}`;
+    last.set(key, { en: word.token.en, th: word.token.th, correct: word.typed === word.token.en });
+  }
+  for (const item of finished.missed) {
+    const key = `${item.en}\0${item.th}`;
+    if (!last.has(key)) last.set(key, { en: item.en, th: item.th, correct: false });
+  }
+  if (finished.banner === "ทบทวนวันนี้") return [...last.values()];
+  return [...last.values()].filter((item) => {
+    const banked = store.weak.some((word) => word.en === item.en && word.th === item.th) || store.slow.some((word) => word.en === item.en && word.th === item.th);
+    return banked || !item.correct;
+  });
+}
+
+function playedTokens(finished: Session): Token[] {
+  const tokens: Token[] = [];
+  for (const word of finished.words) {
+    if (!word.completed && word.typed.length === 0) break;
+    tokens.push({
+      en: word.token.en,
+      th: word.token.th,
+      sentenceEnd: word.token.sentenceEnd,
+      tale: word.token.tale,
+      scene: word.token.scene,
+    });
+  }
+  return tokens;
 }
 
 function renderConfig(): void {
@@ -136,12 +180,14 @@ function renderConfig(): void {
     segment("เวลา", times.map((time) => btn(`${time} วิ`, store.duration === time, `data-time="${time}"`)).join(""), "time"),
     segment("คำแปล", glosses.map(([id, label]) => btn(label, store.gloss === id, `data-gloss="${id}"`)).join(""), "gloss"),
     `<div class="control" data-slot="level"><label class="control-label" for="level">ระดับ</label><div class="segment"><select id="level" class="level-select">${levelOptions}</select></div></div>`,
-    `<p class="control-note">${glossNote()} · ตัวพิมพ์มีผล</p>`,
+    `<p class="control-note">${glossNote()}</p>`,
   ].join("");
 
+  const due = dueTokens(store);
   const weakDisabled = store.weak.length === 0;
   const slowDisabled = store.slow.length === 0;
   miniEl.innerHTML = [
+    due.length > 0 ? `<button type="button" class="chip btn ghost" id="review">ทบทวนวันนี้ ${due.length}</button>` : "",
     `<button type="button" class="chip btn ghost" id="weak"${weakDisabled ? " disabled" : ""}>ซ้อมคำอ่อน ${store.weak.length}</button>`,
     `<button type="button" class="chip btn ghost" id="slow"${slowDisabled ? " disabled" : ""}>ซ้อมคำช้า ${store.slow.length}</button>`,
     `<span class="chip streak${store.streak === 0 ? " cold" : ""}" aria-label="สตรีค ${store.streak} วัน"><svg class="flame" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.2 1.2c.3 1.8-.2 3-1.1 4-.4-1.3-1.5-2-1.5-2C4.2 4.6 3 6.4 3 8.4 3 11.2 5.2 13.5 8 13.5s5-2.3 5-5.1c0-2.4-1.5-4-2.6-5.2-.2 1.3-1 2.2-1.7 2.6.4-1.6.2-3.3-.5-4.6Z"/></svg>${store.streak}</span>`,
@@ -178,8 +224,9 @@ function renderWords(now: number): void {
     if (word.token.sentenceEnd) classes.push("end");
     if (current && now < session.rejectUntil) classes.push("reject");
     const vis = glossVis(session, i, now);
+    const letters = letterHtml(word.typed, word.token.en, current && session.phase !== "finished", word.completed && word.typed !== word.token.en);
     html.push(
-      `<div class="${classes.join(" ")}"><div class="gloss" data-vis="${vis}">${esc(word.token.th)}</div><div class="letters" lang="en">${letterHtml(word.typed, word.token.en, current && session.phase !== "finished", word.completed && word.typed !== word.token.en)}</div></div>`,
+      `<div class="${classes.join(" ")}"><div class="gloss" data-vis="${vis}">${esc(word.token.th)}</div><div class="letters" lang="en">${letters}</div></div>`,
     );
   }
   wordsEl.innerHTML = html.join("");
@@ -247,6 +294,11 @@ function renderResults(): void {
     session.bestWpm > 0
       ? `<p class="${session.isRecord ? "record-line" : "char-line"}">${session.isRecord ? "สถิติใหม่" : "สถิติสูงสุด"} ${Math.round(session.bestWpm)} คำต่อนาที</p>`
       : "";
+  const prior =
+    session.priorWpm > 0
+      ? `<p class="${wpm > session.priorWpm ? "record-line" : "char-line"}">${wpm > session.priorWpm ? "เร็วกว่าชุดเดิม" : "ชุดเดิมครั้งก่อน"} ${Math.round(session.priorWpm)} คำต่อนาที</p>`
+      : "";
+  const same = playedTokens(session);
   resultsEl.innerHTML = `
     <div class="result-grid">
       <article class="stat"><span>ความเร็ว</span><strong>${Math.round(wpm)}</strong><small>คำต่อนาที</small></article>
@@ -254,6 +306,7 @@ function renderResults(): void {
       <article class="stat"><span>สตรีค</span><strong>${store.streak}</strong><small>วันติดกัน</small></article>
     </div>
     ${record}
+    ${prior}
     <div class="chart-wrap">${chartSvg(session.samples)}</div>
     <p class="stat-strip"><span>ความเร็วดิบ <strong>${Math.round(rawWpm(session, elapsed))}</strong></span><span>สม่ำเสมอ <strong>${Math.round(consistencyOf(session.samples))}%</strong></span><span>ถูก <strong>${chars.correct}</strong> · ผิด <strong>${chars.incorrect}</strong> · เกิน <strong>${chars.extra}</strong></span></p>
     ${
@@ -263,6 +316,7 @@ function renderResults(): void {
     }
     <div class="result-actions">
       <button type="button" class="btn primary" id="again">เล่นอีกรอบ</button>
+      ${same.length ? `<button type="button" class="btn ghost" id="same-set">ชุดเดิมอีกครั้ง</button>` : ""}
       ${session.missed.length ? `<button type="button" class="btn ghost" id="drill">ซ้อมเฉพาะคำที่พลาด</button>` : ""}
       ${slow.length ? `<button type="button" class="btn ghost" id="slow-drill">ซ้อมคำที่ช้า</button>` : ""}
     </div>
@@ -470,6 +524,7 @@ configEl.addEventListener("change", (event) => {
 miniEl.addEventListener("click", (event) => {
   const target = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
   if (!target) return;
+  if (target.id === "review") beginDrill(dueTokens(store), "ทบทวนวันนี้");
   if (target.id === "weak" && store.weak.length > 0) beginDrill(store.weak, "ซ้อมคำอ่อน");
   if (target.id === "slow" && store.slow.length > 0) beginDrill(store.slow, "ซ้อมคำช้า");
 });
@@ -480,6 +535,7 @@ resultsEl.addEventListener("click", (event) => {
   const target = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
   if (!target) return;
   if (target.id === "again") restart();
+  if (target.id === "same-set") replaySet();
   if (target.id === "drill") {
     beginDrill(
       session.missed.map((item) => ({ en: item.en, th: item.th })),

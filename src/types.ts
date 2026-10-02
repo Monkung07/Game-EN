@@ -15,6 +15,8 @@ export interface Token {
 
 export interface WeakWord extends Token {
   count: number;
+  due: string;
+  step: number;
 }
 
 export interface Best {

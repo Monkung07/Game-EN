@@ -36,6 +36,7 @@ export interface Session {
   queuePos: number;
   isRecord: boolean;
   bestWpm: number;
+  priorWpm: number;
 }
 
 const PEEK_IDLE_MS = 800;
@@ -63,6 +64,7 @@ export function createSession(queue: Token[], durationSec: number, glossMode: Gl
     queuePos: 0,
     isRecord: false,
     bestWpm: 0,
+    priorWpm: 0,
   };
   fillAhead(session, 80);
   return session;
