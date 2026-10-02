@@ -10,6 +10,8 @@ export interface Token {
   en: string;
   th: string;
   sentenceEnd?: boolean;
+  /** Natural Thai for the whole tale line. Shown once, above the English. */
+  sentenceTh?: string;
   tale?: string;
   scene?: string;
 }

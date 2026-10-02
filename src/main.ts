@@ -35,6 +35,7 @@ const maskEl = document.querySelector<HTMLElement>("#mask")!;
 const wordsEl = document.querySelector<HTMLElement>("#words")!;
 const resultsEl = document.querySelector<HTMLElement>("#results")!;
 const hintEl = document.querySelector<HTMLElement>("#hint")!;
+const altHintEl = document.querySelector<HTMLElement>("#alt-hint")!;
 const catcher = document.querySelector<HTMLInputElement>("#catcher")!;
 const meterEl = document.querySelector<HTMLElement>("#meter")!;
 const meterFill = document.querySelector<HTMLElement>("#meter-fill")!;
@@ -135,11 +136,6 @@ function segment(label: string, buttons: string, slot: string): string {
   return `<div class="control" data-slot="${slot}"><span class="control-label">${label}</span><div class="segment">${buttons}</div></div>`;
 }
 
-function glossNote(): string {
-  const gloss = store.gloss === "full" ? "คำแปลโชว์ทุกคำ" : store.gloss === "focus" ? "คำแปลชัดแค่คำนี้" : "กด Alt เพื่อดูคำแปล";
-  return `${gloss} · ตัวพิมพ์มีผล`;
-}
-
 function scheduleItems(finished: Session): { en: string; th: string; correct: boolean }[] {
   const last = new Map<string, { en: string; th: string; correct: boolean }>();
   for (const word of finished.words) {
@@ -166,6 +162,7 @@ function playedTokens(finished: Session): Token[] {
       en: word.token.en,
       th: word.token.th,
       sentenceEnd: word.token.sentenceEnd,
+      sentenceTh: word.token.sentenceTh,
       tale: word.token.tale,
       scene: word.token.scene,
     });
@@ -194,10 +191,10 @@ function limitLabel(): string {
 }
 
 function renderConfig(): void {
-  const glosses: [GlossMode, string][] = [
-    ["full", "เห็นทุกคำ"],
-    ["focus", "ทีละคำ"],
-    ["peek", "ซ่อนไว้"],
+  const glosses: [GlossMode, string, string][] = [
+    ["full", "เห็นทุกคำ", "คำแปลโชว์ทุกคำ · ตัวพิมพ์มีผล"],
+    ["focus", "ทีละคำ", "คำแปลชัดแค่คำนี้ · ตัวพิมพ์มีผล"],
+    ["peek", "ซ่อนไว้", "กด Alt เพื่อดูคำแปล · ตัวพิมพ์มีผล"],
   ];
   const modes: [TestMode, string, boolean][] = [
     ["time", "เวลา", false],
@@ -206,21 +203,17 @@ function renderConfig(): void {
     ["weak", "ซ้อมคำอ่อน", store.weak.length === 0],
     ["slow", "ซ้อมคำช้า", store.slow.length === 0],
   ];
-  const levelOptions = LEVELS.map(
-    (level) => `<option value="${level}"${store.level === level ? " selected" : ""}>${level}</option>`,
-  ).join("");
   const limit =
     store.testMode === "time" || store.testMode === "words" || store.testMode === "quote"
       ? segment(limitLabel(), limitButtons(), "time")
       : "";
   configEl.innerHTML = [
     `<div class="controls-line">`,
-    `<div class="control" data-slot="level"><label class="control-label" for="level">ระดับ</label><div class="segment"><select id="level" class="level-select">${levelOptions}</select></div></div>`,
+    `<div class="control" data-slot="level"><span class="control-label" id="level-label">ระดับ</span><div class="level-menu"><div class="segment"><button type="button" class="text-btn active level-trigger" aria-haspopup="listbox" aria-expanded="false" aria-labelledby="level-label">${store.level}</button></div><div class="level-list" role="listbox" aria-labelledby="level-label" hidden>${LEVELS.map((level) => `<button type="button" class="text-btn${store.level === level ? " active" : ""}" role="option" aria-selected="${store.level === level}" data-level="${level}">${level}</button>`).join("")}</div></div></div>`,
     segment("โหมด", modes.map(([id, label, disabled]) => btn(label, store.testMode === id, `data-mode="${id}"`, disabled)).join(""), "mode"),
-    segment("คำแปล", glosses.map(([id, label]) => btn(label, store.gloss === id, `data-gloss="${id}"`)).join(""), "gloss"),
+    segment("คำแปล", glosses.map(([id, label, tip]) => btn(label, store.gloss === id, `data-gloss="${id}" data-tip="${tip}"`)).join(""), "gloss"),
     limit,
     `</div>`,
-    `<p class="control-note">${glossNote()}</p>`,
   ].join("");
 
   const due = dueTokens(store);
@@ -248,23 +241,51 @@ function letterHtml(wordTyped: string, expected: string, showCaret: boolean, mis
   return parts.join("");
 }
 
+function wordHtml(index: number, now: number, sentenceMode: boolean): string {
+  const word = session.words[index];
+  const current = index === session.index;
+  const classes = ["word"];
+  if (current) classes.push("current");
+  else if (word.completed) classes.push("done");
+  else classes.push("next");
+  if (!sentenceMode && word.token.sentenceEnd) classes.push("end");
+  if (current && now < session.rejectUntil) classes.push("reject");
+  const gloss = sentenceMode ? "" : `<div class="gloss" data-vis="${glossVis(session, index)}">${esc(word.token.th)}</div>`;
+  const letters = letterHtml(word.typed, word.token.en, current && session.phase !== "finished", word.completed && word.typed !== word.token.en);
+  return `<div class="${classes.join(" ")}">${gloss}<div class="letters" lang="en">${letters}</div></div>`;
+}
+
+function sentenceSpan(index: number): { start: number; end: number } | null {
+  if (index < 0 || index >= session.words.length) return null;
+  let start = index;
+  while (start > 0 && !session.words[start - 1].token.sentenceEnd) start -= 1;
+  let end = start;
+  while (end < session.words.length - 1 && !session.words[end].token.sentenceEnd) end += 1;
+  return { start, end: end + 1 };
+}
+
+function sentenceLineHtml(range: { start: number; end: number }, isCurrent: boolean, now: number): string {
+  const vis = session.glossMode === "peek" && !isPeeking(session) ? "hidden" : "bright";
+  const thai = isCurrent ? `<p class="line-th" data-vis="${vis}">${esc(session.words[range.start]?.token.sentenceTh ?? "")}</p>` : "";
+  const words: string[] = [];
+  for (let i = range.start; i < range.end; i++) words.push(wordHtml(i, now, true));
+  return `<div class="tale-line${isCurrent ? " current" : " next"}">${thai}<div class="tale-words">${words.join("")}</div></div>`;
+}
+
 function renderWords(now: number): void {
-  const html: string[] = [];
-  for (let i = 0; i < session.words.length; i++) {
-    const word = session.words[i];
-    const current = i === session.index;
-    const classes = ["word"];
-    if (current) classes.push("current");
-    else if (word.completed) classes.push("done");
-    else classes.push("next");
-    if (word.token.sentenceEnd) classes.push("end");
-    if (current && now < session.rejectUntil) classes.push("reject");
-    const vis = glossVis(session, i, now);
-    const letters = letterHtml(word.typed, word.token.en, current && session.phase !== "finished", word.completed && word.typed !== word.token.en);
-    html.push(
-      `<div class="${classes.join(" ")}"><div class="gloss" data-vis="${vis}">${esc(word.token.th)}</div><div class="letters" lang="en">${letters}</div></div>`,
-    );
+  const sentenceMode = Boolean(session.words[session.index]?.token.sentenceTh);
+  wordsEl.classList.toggle("sentences", sentenceMode);
+  if (sentenceMode) {
+    const current = sentenceSpan(session.index);
+    const next = current ? sentenceSpan(current.end) : null;
+    const lines = [current ? sentenceLineHtml(current, true, now) : "", next ? sentenceLineHtml(next, false, now) : ""];
+    wordsEl.innerHTML = lines.join("");
+    wordsEl.style.transform = "";
+    placeCaret();
+    return;
   }
+  const html: string[] = [];
+  for (let i = 0; i < session.words.length; i++) html.push(wordHtml(i, now, false));
   wordsEl.innerHTML = html.join("");
   const currentEl = wordsEl.querySelector<HTMLElement>(".word.current");
   if (currentEl) {
@@ -402,12 +423,28 @@ function bindChartHover(): void {
   const plotWidth = Number(hit.getAttribute("width") ?? 636);
   const from = { x: dots[0].x, y: dots[0].y };
   const to = { x: from.x, y: from.y };
-  const origin = { x: from.x, y: from.y };
-  let startedAt = 0;
   let raf = 0;
+  let lastTick = 0;
   let visible = false;
-  let lastSec = -1;
-  const glideMs = 420;
+  let shownSec = -1;
+
+  const writeTip = (sec: number) => {
+    const point = dots[sec - 1];
+    tip.innerHTML = `<p class="pace-tip-time">วินาทีที่ ${sec}</p><p>ความเร็ว <strong>${point.wpm}</strong></p><p>ความเร็วดิบ <strong>${point.raw}</strong></p><p class="pace-tip-err">ผิด <strong>${point.errors}</strong></p>`;
+  };
+
+  const nearestSec = (x: number) => {
+    let best = 1;
+    let bestDist = Number.POSITIVE_INFINITY;
+    for (let i = 0; i < dots.length; i++) {
+      const dist = Math.abs(dots[i].x - x);
+      if (dist < bestDist) {
+        bestDist = dist;
+        best = i + 1;
+      }
+    }
+    return best;
+  };
 
   const place = (x: number, y: number) => {
     const text = x.toFixed(1);
@@ -415,46 +452,72 @@ function bindChartHover(): void {
     guide.setAttribute("x2", text);
     hover.setAttribute("cx", text);
     hover.setAttribute("cy", y.toFixed(1));
+    const frame = svg.parentElement?.getBoundingClientRect() ?? svg.getBoundingClientRect();
     const viewW = svg.viewBox.baseVal.width || 760;
     const viewH = svg.viewBox.baseVal.height || 228;
     const rect = svg.getBoundingClientRect();
-    const px = (x / viewW) * rect.width;
-    const py = (y / viewH) * rect.height;
+    const px = rect.left - frame.left + (x / viewW) * rect.width;
+    const py = rect.top - frame.top + (y / viewH) * rect.height;
     const gap = 8;
-    const tipW = tip.offsetWidth;
-    const tipH = tip.offsetHeight;
+    const tipW = tip.offsetWidth || 120;
+    const tipH = tip.offsetHeight || 72;
     let left = px - tipW - gap;
-    if (left < 0) left = px + gap;
-    left = Math.max(0, Math.min(left, rect.width - tipW));
-    const top = Math.max(0, Math.min(py - tipH / 2, rect.height - tipH));
+    if (left < 4) left = px + gap;
+    left = Math.max(4, Math.min(left, frame.width - tipW - 4));
+    const top = Math.max(4, Math.min(py - tipH / 2, frame.height - tipH - 4));
     tip.style.left = `${left}px`;
     tip.style.top = `${top}px`;
   };
 
-  const step = (now: number) => {
-    const t = Math.min(1, (now - startedAt) / glideMs);
-    const eased = 1 - (1 - t) ** 3;
-    from.x = origin.x + (to.x - origin.x) * eased;
-    from.y = origin.y + (to.y - origin.y) * eased;
-    place(from.x, from.y);
-    if (t < 1) raf = requestAnimationFrame(step);
-    else raf = 0;
+  const syncTip = (x: number) => {
+    const sec = nearestSec(x);
+    if (sec === shownSec) return;
+    shownSec = sec;
+    writeTip(sec);
   };
 
-  const glideTo = (x: number, y: number) => {
-    origin.x = from.x;
-    origin.y = from.y;
+  const step = (now: number) => {
+    const dt = lastTick === 0 ? 16 : Math.min(48, now - lastTick);
+    lastTick = now;
+    const k = 1 - Math.exp(-dt / 48);
+    from.x += (to.x - from.x) * k;
+    from.y += (to.y - from.y) * k;
+    if (Math.hypot(to.x - from.x, to.y - from.y) < 0.5) {
+      from.x = to.x;
+      from.y = to.y;
+      raf = 0;
+    } else {
+      raf = requestAnimationFrame(step);
+    }
+    syncTip(from.x);
+    place(from.x, from.y);
+  };
+
+  const goTo = (x: number, y: number) => {
     to.x = x;
     to.y = y;
-    startedAt = performance.now();
-    if (!raf) raf = requestAnimationFrame(step);
+    if (Math.hypot(x - from.x, y - from.y) > 28) {
+      if (raf) cancelAnimationFrame(raf);
+      raf = 0;
+      lastTick = 0;
+      from.x = x;
+      from.y = y;
+      syncTip(x);
+      place(x, y);
+      return;
+    }
+    if (!raf) {
+      lastTick = 0;
+      raf = requestAnimationFrame(step);
+    }
   };
 
   const hide = () => {
     if (raf) cancelAnimationFrame(raf);
     raf = 0;
+    lastTick = 0;
     visible = false;
-    lastSec = -1;
+    shownSec = -1;
     tip.hidden = true;
     guide.setAttribute("hidden", "");
     hover.setAttribute("hidden", "");
@@ -477,18 +540,14 @@ function bindChartHover(): void {
       to.x = point.x;
       to.y = point.y;
       visible = true;
-      lastSec = sec;
       guide.removeAttribute("hidden");
       hover.removeAttribute("hidden");
       tip.hidden = false;
-      tip.innerHTML = `<p class="pace-tip-time">วินาทีที่ ${sec}</p><p>ความเร็ว <strong>${point.wpm}</strong></p><p>ความเร็วดิบ <strong>${point.raw}</strong></p><p class="pace-tip-err">ผิด <strong>${point.errors}</strong></p>`;
-      place(from.x, from.y);
-      return;
+      shownSec = -1;
+      syncTip(point.x);
+      place(point.x, point.y);
     }
-    if (sec === lastSec) return;
-    lastSec = sec;
-    tip.innerHTML = `<p class="pace-tip-time">วินาทีที่ ${sec}</p><p>ความเร็ว <strong>${point.wpm}</strong></p><p>ความเร็วดิบ <strong>${point.raw}</strong></p><p class="pace-tip-err">ผิด <strong>${point.errors}</strong></p>`;
-    glideTo(point.x, point.y);
+    goTo(point.x, point.y);
   };
 
   svg.addEventListener("pointermove", (event) => show(event.clientX));
@@ -531,7 +590,7 @@ function renderResults(): void {
     ${recap}
     ${
       session.missed.length
-        ? `<div><p class="miss-title">คำที่ยังไม่คล่อง ${session.missed.length}</p><ul class="missed">${misses}</ul></div>`
+        ? `<div class="result-panel"><p class="miss-title">คำที่ยังไม่คล่อง ${session.missed.length}</p><ul class="missed">${misses}</ul></div>`
         : `<p class="clean">รอบนี้ไม่มีคำผิด</p>`
     }
     <div class="result-actions">
@@ -545,6 +604,7 @@ function renderResults(): void {
 }
 
 function recapHtml(): string {
+  if (session.words.some((word) => word.token.sentenceTh)) return recapSentences();
   const items: string[] = [];
   for (const word of session.words) {
     if (!word.completed && word.typed.length === 0) break;
@@ -555,7 +615,28 @@ function recapHtml(): string {
     );
   }
   if (items.length === 0) return "";
-  return `<div class="recap"><p class="miss-title">คำในรอบนี้</p><div class="recap-words">${items.join("")}</div></div>`;
+  return `<div class="recap result-panel"><p class="miss-title">คำในรอบนี้</p><div class="recap-words">${items.join("")}</div></div>`;
+}
+
+function recapSentences(): string {
+  const blocks: string[] = [];
+  let thai = "";
+  let english: string[] = [];
+  const flush = () => {
+    if (english.length === 0) return;
+    blocks.push(`<div class="recap-sentence"><p class="recap-line">${esc(thai)}</p><p class="recap-en">${english.join(" ")}</p></div>`);
+    english = [];
+  };
+  for (const word of session.words) {
+    if (!word.completed && word.typed.length === 0) break;
+    if (english.length === 0) thai = word.token.sentenceTh ?? "";
+    const miss = word.typed !== word.token.en;
+    english.push(`<span class="${miss ? "miss" : ""}">${esc(word.token.en)}</span>`);
+    if (word.token.sentenceEnd) flush();
+  }
+  flush();
+  if (blocks.length === 0) return "";
+  return `<div class="recap result-panel"><p class="miss-title">คำในรอบนี้</p><div class="recap-story">${blocks.join("")}</div></div>`;
 }
 
 function updateMeter(now: number): void {
@@ -626,14 +707,17 @@ function render(): void {
     resultsEl.innerHTML = "";
   }
   updateMeter(now);
+  altHintEl.hidden = store.gloss !== "peek";
   if (finished) {
     const notes: string[] = [];
     if (session.missed.length) notes.push("คำที่พลาดถูกเก็บไว้ในคลังคำอ่อนแล้ว");
     if (slowWords(session).length) notes.push("คำที่ช้าถูกเก็บไว้แล้ว");
+    hintEl.hidden = false;
     hintEl.textContent = notes.length ? notes.join(" · ") : "รอบนี้พิมพ์ได้ครบ ไม่มีคำผิด";
     return;
   }
-  hintEl.textContent = "เว้นวรรคไปคำถัดไป · Tab เริ่มรอบใหม่";
+  hintEl.hidden = true;
+  hintEl.textContent = "";
 }
 
 function showThaiWarning(): void {
@@ -665,6 +749,14 @@ function onKeyDown(event: KeyboardEvent): void {
     return;
   }
   if (event.key === "Escape" || event.key === "Tab") {
+    const list = document.querySelector<HTMLElement>(".level-list");
+    if (event.key === "Escape" && list && !list.hidden) {
+      event.preventDefault();
+      list.hidden = true;
+      document.querySelector(".level-trigger")?.classList.remove("open");
+      document.querySelector(".level-trigger")?.setAttribute("aria-expanded", "false");
+      return;
+    }
     event.preventDefault();
     restart();
     focusCatcher();
@@ -733,6 +825,23 @@ configEl.addEventListener("click", (event) => {
   const count = target.dataset.count;
   const quote = target.dataset.quote;
   const gloss = target.dataset.gloss as GlossMode | undefined;
+  if (target.classList.contains("level-trigger")) {
+    const list = target.closest(".level-menu")?.querySelector<HTMLElement>(".level-list");
+    if (!list) return;
+    const open = list.hidden;
+    list.hidden = !open;
+    target.setAttribute("aria-expanded", String(open));
+    target.classList.toggle("open", open);
+    return;
+  }
+  const picked = target.dataset.level as Level | undefined;
+  if (picked) {
+    if ((LEVELS as readonly string[]).includes(picked) && picked !== store.level) {
+      store = saveSettings(store.duration, store.gloss, store.testMode, picked, store.wordCount, store.quote);
+      restart();
+    } else focusCatcher();
+    return;
+  }
   if (mode && !target.disabled && mode !== store.testMode) {
     store = saveSettings(store.duration, store.gloss, mode, store.level, store.wordCount, store.quote);
     restart();
@@ -770,18 +879,6 @@ configEl.addEventListener("click", (event) => {
   focusCatcher();
 });
 
-configEl.addEventListener("change", (event) => {
-  const select = event.target;
-  if (!(select instanceof HTMLSelectElement) || select.id !== "level") return;
-  const level = select.value as Level;
-  if (!(LEVELS as readonly string[]).includes(level) || level === store.level) {
-    focusCatcher();
-    return;
-  }
-  store = saveSettings(store.duration, store.gloss, store.testMode, level, store.wordCount, store.quote);
-  restart();
-});
-
 miniEl.addEventListener("click", (event) => {
   const target = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
   if (!target) return;
@@ -816,6 +913,14 @@ window.addEventListener("keyup", (event) => {
 catcher.addEventListener("beforeinput", onBeforeInput);
 document.addEventListener("pointerdown", (event) => {
   const target = event.target as HTMLElement;
+  if (!target.closest(".level-menu")) {
+    const list = document.querySelector<HTMLElement>(".level-list");
+    if (list && !list.hidden) {
+      list.hidden = true;
+      document.querySelector(".level-trigger")?.classList.remove("open");
+      document.querySelector(".level-trigger")?.setAttribute("aria-expanded", "false");
+    }
+  }
   if (target.closest("button")) return;
   focusCatcher();
 });
@@ -829,10 +934,10 @@ setInterval(() => {
   tick(session, now);
   updateMeter(now);
   const finishedNow = session.phase === "finished" && before !== "finished";
-  const peekChanged = store.gloss === "peek" && isPeeking(session, now) !== lastPeek;
+  const peekChanged = store.gloss === "peek" && isPeeking(session) !== lastPeek;
   const second = Math.ceil(remainingMs(session, now) / 1000);
   if (finishedNow || peekChanged || (session.phase === "running" && second !== lastSecond)) {
-    lastPeek = isPeeking(session, now);
+    lastPeek = isPeeking(session);
     lastSecond = second;
     render();
   }

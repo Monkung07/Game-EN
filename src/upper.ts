@@ -1,3 +1,4 @@
+import { taleSentence } from "./tale-lines";
 import type { Token } from "./types";
 
 function line(pairs: [string, string][]): Token[] {
@@ -13,9 +14,11 @@ function story(title: string, lines: [string, string][][], scenes: string[]): To
   }
   return lines.map((pairs, index) => {
     const tokens = line(pairs);
+    const sentenceTh = taleSentence(tokens.map((token) => token.en).join(" "));
     for (const token of tokens) {
       token.tale = title;
       token.scene = scenes[index];
+      token.sentenceTh = sentenceTh;
     }
     return tokens;
   });

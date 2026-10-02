@@ -23,7 +23,6 @@
         </div>
         <div id="mini" class="chips"></div>
       </header>
-      <p id="hint"></p>
       <div id="config" class="controls"></div>
       <main>
         <section class="stage">
@@ -45,6 +44,14 @@
           </div>
         </section>
       </main>
+      <footer class="dock">
+        <p id="hint" class="status-note" hidden></p>
+        <div class="key-hints">
+          <p class="key-row"><kbd>space</kbd><span class="key-dash">-</span><span>ไปคำถัดไป</span></p>
+          <p class="key-row"><kbd>tab</kbd><span class="key-or">หรือ</span><kbd>esc</kbd><span class="key-dash">-</span><span>เริ่มรอบใหม่</span></p>
+          <p class="key-row" id="alt-hint" hidden><kbd>alt</kbd><span class="key-dash">-</span><span>ดูคำแปล</span></p>
+        </div>
+      </footer>
     </div>
     <input id="catcher" class="catcher" autocomplete="off" autocapitalize="off" autocorrect="off" spellcheck="false" aria-label="ช่องพิมพ์" />
     <script type="module" src="/src/main.ts"></script>

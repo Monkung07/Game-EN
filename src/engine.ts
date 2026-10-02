@@ -50,7 +50,6 @@ export interface Session {
   noLoop: boolean;
 }
 
-const PEEK_IDLE_MS = 800;
 const MAX_EXTRA = 24;
 
 export function createSession(
@@ -100,7 +99,14 @@ function fillAhead(session: Session, targetAhead: number): void {
     const token = session.queue[session.queuePos % session.queue.length];
     session.queuePos += 1;
     session.words.push({
-      token: { en: token.en, th: token.th, sentenceEnd: token.sentenceEnd, tale: token.tale, scene: token.scene },
+      token: {
+        en: token.en,
+        th: token.th,
+        sentenceEnd: token.sentenceEnd,
+        sentenceTh: token.sentenceTh,
+        tale: token.tale,
+        scene: token.scene,
+      },
       typed: "",
       hadError: false,
       completed: false,
@@ -204,19 +210,16 @@ export function remainingMs(session: Session, now: number): number {
   return Math.max(0, session.durationMs - (now - session.startedAt));
 }
 
-export function isPeeking(session: Session, now: number): boolean {
-  if (session.glossMode !== "peek") return false;
-  if (session.peekHold) return true;
-  const since = session.lastInputAt ?? session.createdAt;
-  return now - since >= PEEK_IDLE_MS;
+export function isPeeking(session: Session): boolean {
+  return session.glossMode === "peek" && session.peekHold;
 }
 
 export type GlossVis = "bright" | "normal" | "dim" | "hidden";
 
-export function glossVis(session: Session, index: number, now: number): GlossVis {
+export function glossVis(session: Session, index: number): GlossVis {
   const current = session.index;
   if (session.glossMode === "peek") {
-    if (!isPeeking(session, now)) return "hidden";
+    if (!isPeeking(session)) return "hidden";
     return index === current ? "bright" : "hidden";
   }
   if (session.glossMode === "focus") {

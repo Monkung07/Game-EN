@@ -1,3 +1,4 @@
+import { taleSentence } from "./tale-lines";
 import type { Level, Token } from "./types";
 import { sentencesB2, sentencesC1, sentencesC2, talesB2, talesC1, talesC2 } from "./upper";
 
@@ -304,9 +305,11 @@ function story(title: string, lines: [string, string][][], scenes: string[]): To
   }
   return lines.map((pairs, index) => {
     const tokens = line(pairs);
+    const sentenceTh = taleSentence(tokens.map((token) => token.en).join(" "));
     for (const token of tokens) {
       token.tale = title;
       token.scene = scenes[index];
+      token.sentenceTh = sentenceTh;
     }
     return tokens;
   });
@@ -1697,6 +1700,9 @@ export function assertContent(): void {
         if (!/^[A-Za-z'-]+$/.test(token.en) || token.th.length === 0) {
           throw new Error(`Bad token: ${token.en}`);
         }
+      }
+      if (sentence[0]?.tale && !sentence[0].sentenceTh) {
+        throw new Error(`Missing sentence Thai: ${sentence.map((token) => token.en).join(" ")}`);
       }
     }
   }
