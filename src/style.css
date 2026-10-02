@@ -571,21 +571,157 @@ body.finished #restart {
 .chart-wrap {
   background: var(--panel);
   border-radius: 1rem;
-  padding: 0.7rem 0.8rem 0.35rem;
+  padding: 0.7rem 0.55rem 0.45rem;
 }
 
-.chart {
+.pace-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.35rem 0.9rem;
+  margin: 0 0.7rem 0.15rem;
+  color: var(--muted);
+  font-size: 0.78rem;
+}
+
+.pace-legend span {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.swatch {
+  width: 1.15rem;
+  height: 0;
+  border-top: 2px solid var(--accent);
+}
+
+.swatch.raw {
+  border-top-color: var(--pending);
+}
+
+.swatch.avg {
+  border-top-style: dashed;
+}
+
+.swatch.err {
+  width: 0.45rem;
+  height: 0.45rem;
+  border: 0;
+  background: var(--error);
+}
+
+.pace-frame {
+  position: relative;
+}
+
+.pace {
   width: 100%;
-  height: 76px;
+  height: auto;
   display: block;
+  touch-action: none;
 }
 
-.chart polyline {
-  fill: none;
+.pace-hit {
+  fill: transparent;
+  cursor: crosshair;
+}
+
+.pace-guide {
   stroke: var(--accent);
-  stroke-width: 3;
+  stroke-width: 1;
+  stroke-dasharray: 3 3;
+  pointer-events: none;
+}
+
+.pace-hover {
+  fill: var(--card);
+  stroke: var(--accent);
+  stroke-width: 2;
+  pointer-events: none;
+}
+
+.pace-tip {
+  position: absolute;
+  z-index: 2;
+  pointer-events: none;
+  background: var(--card);
+  color: var(--ink);
+  border-radius: 0.75rem;
+  padding: 0.4rem 0.6rem 0.45rem;
+  box-shadow: var(--shadow);
+  font-size: 0.78rem;
+  line-height: 1.35;
+  white-space: nowrap;
+}
+
+.pace-tip p {
+  margin: 0;
+}
+
+.pace-tip-time {
+  color: var(--muted);
+  margin-bottom: 0.12rem;
+}
+
+.pace-tip strong {
+  font-weight: 700;
+}
+
+.pace-tip-err strong {
+  color: var(--error);
+}
+
+.pace-grid {
+  stroke: var(--line);
+  stroke-width: 1;
+}
+
+.pace-grid.faint {
+  opacity: 0.45;
+}
+
+.pace-tick,
+.pace-name {
+  fill: var(--muted);
+  font-size: 11px;
+  font-family: inherit;
+}
+
+.pace-name {
+  font-size: 12px;
+}
+
+.pace-raw,
+.pace-wpm,
+.pace-avg {
+  fill: none;
   stroke-linejoin: round;
   stroke-linecap: round;
+}
+
+.pace-raw {
+  stroke: var(--pending);
+  stroke-width: 1.75;
+}
+
+.pace-wpm {
+  stroke: var(--accent);
+  stroke-width: 2;
+}
+
+.pace-dot {
+  fill: var(--accent);
+}
+
+.pace-avg {
+  stroke: var(--accent);
+  stroke-width: 1.25;
+  stroke-dasharray: 5 4;
+  opacity: 0.55;
+}
+
+.pace-err {
+  fill: var(--error);
 }
 
 .miss-title {

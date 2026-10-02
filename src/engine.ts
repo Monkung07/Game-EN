@@ -15,6 +15,12 @@ export interface MissedWord {
   count: number;
 }
 
+export interface PacePoint {
+  wpm: number;
+  raw: number;
+  errors: number;
+}
+
 export interface Session {
   words: WordState[];
   index: number;
@@ -23,6 +29,8 @@ export interface Session {
   durationMs: number;
   incorrectChars: number;
   samples: number[];
+  pace: PacePoint[];
+  pacedErrors: number;
   lastSampleSec: number;
   missed: MissedWord[];
   glossMode: GlossMode;
@@ -60,6 +68,8 @@ export function createSession(
     durationMs: durationSec * 1000,
     incorrectChars: 0,
     samples: [],
+    pace: [],
+    pacedErrors: 0,
     lastSampleSec: 0,
     missed: [],
     glossMode,
@@ -226,6 +236,20 @@ function noteMiss(session: Session, word: WordState): void {
   else session.missed.push({ en: word.token.en, th: word.token.th, count: 1 });
 }
 
+function snapshotPace(session: Session, elapsedMs: number, countErrors: boolean): void {
+  const minutes = elapsedMs / 60000;
+  const correct = correctCharCount(session);
+  const stats = charStats(session);
+  const rawChars = stats.correct + stats.incorrect + stats.extra;
+  const errorsNow = session.incorrectChars + skippedChars(session);
+  const errors = countErrors ? Math.max(0, errorsNow - session.pacedErrors) : 0;
+  if (countErrors) session.pacedErrors = errorsNow;
+  const wpm = minutes > 0 && correct > 0 ? correct / 5 / minutes : 0;
+  const raw = minutes > 0 && rawChars > 0 ? rawChars / 5 / minutes : 0;
+  session.samples.push(wpm);
+  session.pace.push({ wpm, raw, errors });
+}
+
 function finish(session: Session, now: number): void {
   if (session.phase === "finished") return;
   const word = session.words[session.index];
@@ -234,9 +258,11 @@ function finish(session: Session, now: number): void {
   const raw = session.startedAt == null ? session.durationMs : now - session.startedAt;
   const elapsed = session.timed ? Math.min(session.durationMs, raw) : raw;
   session.durationMs = elapsed;
-  const value = wpmAt(correctCharCount(session), elapsed);
   const slots = Math.round(session.durationMs / 1000);
-  while (session.samples.length < slots) session.samples.push(value);
+  while (session.samples.length < slots) {
+    const sec = session.samples.length + 1;
+    snapshotPace(session, Math.min(session.durationMs, sec * 1000), sec === slots);
+  }
 }
 
 function ensureRunning(session: Session, now: number): void {
@@ -256,8 +282,7 @@ export function tick(session: Session, now: number): void {
   }
   const sec = Math.floor(elapsed / 1000);
   if (sec > session.lastSampleSec) {
-    const value = wpmAt(correctCharCount(session), elapsed);
-    for (let s = session.lastSampleSec + 1; s <= sec; s++) session.samples.push(value);
+    for (let s = session.lastSampleSec + 1; s <= sec; s++) snapshotPace(session, s === sec ? elapsed : s * 1000, s === sec);
     session.lastSampleSec = sec;
   }
 }

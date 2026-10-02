@@ -298,20 +298,201 @@ function placeCaret(): void {
   }
 }
 
-function chartSvg(samples: number[]): string {
-  if (samples.length === 0) return "";
-  const width = 460;
-  const height = 72;
-  const max = Math.max(20, ...samples);
-  const step = samples.length === 1 ? 0 : width / (samples.length - 1);
-  const points = samples
-    .map((value, index) => {
-      const x = index * step;
-      const y = height - 6 - (value / max) * (height - 12);
-      return `${x.toFixed(1)},${y.toFixed(1)}`;
+function niceScale(peak: number, roughStep: number): { max: number; step: number } {
+  const step = roughStep;
+  const max = Math.max(step, Math.ceil(Math.max(peak, 1) / step) * step);
+  return { max, step };
+}
+
+function chartHtml(pace: { wpm: number; raw: number; errors: number }[], average: number): string {
+  if (pace.length === 0) return "";
+  const width = 760;
+  const height = 228;
+  const left = 78;
+  const right = 46;
+  const top = 12;
+  const bottom = 26;
+  const plotW = width - left - right;
+  const plotH = height - top - bottom;
+  const seconds = pace.length;
+  const wpmPeak = Math.max(average, ...pace.map((point) => Math.max(point.wpm, point.raw)));
+  const wpmScale = niceScale(wpmPeak, wpmPeak <= 40 ? 10 : wpmPeak <= 100 ? 20 : 40);
+  const errorPeak = Math.max(0, ...pace.map((point) => point.errors));
+  const errorScale = errorPeak <= 4 ? { max: 4, step: 1 } : errorPeak <= 8 ? { max: 8, step: 2 } : niceScale(errorPeak, errorPeak <= 16 ? 4 : 8);
+  const xAt = (sec: number) => left + (sec / seconds) * plotW;
+  const yAt = (value: number, scale: number) => top + plotH - (value / scale) * plotH;
+  const xLabelStep = seconds <= 30 ? 1 : seconds <= 60 ? 2 : 5;
+  const line = (key: "wpm" | "raw") =>
+    pace.map((point, index) => `${xAt(index + 1).toFixed(1)},${yAt(point[key], wpmScale.max).toFixed(1)}`).join(" ");
+  const grids: string[] = [];
+  for (let value = 0; value <= wpmScale.max; value += wpmScale.step) {
+    const y = yAt(value, wpmScale.max);
+    grids.push(`<line class="pace-grid" x1="${left}" y1="${y.toFixed(1)}" x2="${left + plotW}" y2="${y.toFixed(1)}" />`);
+    grids.push(`<text class="pace-tick" x="${left - 8}" y="${y.toFixed(1)}" text-anchor="end" dominant-baseline="middle">${value}</text>`);
+  }
+  for (let value = 0; value <= errorScale.max; value += errorScale.step) {
+    const y = yAt(value, errorScale.max);
+    grids.push(`<text class="pace-tick" x="${left + plotW + 8}" y="${y.toFixed(1)}" text-anchor="start" dominant-baseline="middle">${value}</text>`);
+  }
+  for (let sec = 0; sec <= seconds; sec++) {
+    const x = xAt(sec);
+    grids.push(`<line class="pace-grid${sec % xLabelStep === 0 ? "" : " faint"}" x1="${x.toFixed(1)}" y1="${top}" x2="${x.toFixed(1)}" y2="${top + plotH}" />`);
+    if (sec % xLabelStep === 0) {
+      grids.push(`<text class="pace-tick" x="${x.toFixed(1)}" y="${top + plotH + 16}" text-anchor="middle">${sec}</text>`);
+    }
+  }
+  const dots = pace
+    .map(
+      (point, index) =>
+        `<circle class="pace-dot" data-sec="${index + 1}" data-wpm="${Math.round(point.wpm)}" data-raw="${Math.round(point.raw)}" data-errors="${point.errors}" cx="${xAt(index + 1).toFixed(1)}" cy="${yAt(point.wpm, wpmScale.max).toFixed(1)}" r="2.4" />`,
+    )
+    .join("");
+  const errors = pace
+    .map((point, index) => {
+      if (point.errors <= 0) return "";
+      const x = xAt(index + 1);
+      const y = yAt(point.errors, errorScale.max);
+      return `<rect class="pace-err" x="${(x - 3).toFixed(1)}" y="${(y - 3).toFixed(1)}" width="6" height="6" />`;
     })
-    .join(" ");
-  return `<svg class="chart" viewBox="0 0 ${width} ${height}" preserveAspectRatio="none" aria-hidden="true"><polyline points="${points}" /></svg>`;
+    .join("");
+  const avgY = yAt(Math.max(0, average), wpmScale.max);
+  const errorTotal = pace.reduce((sum, point) => sum + point.errors, 0);
+  return `
+    <div class="pace-legend">
+      <span><i class="swatch wpm"></i>ความเร็ว</span>
+      <span><i class="swatch raw"></i>ความเร็วดิบ</span>
+      <span><i class="swatch avg"></i>เฉลี่ย</span>
+      <span><i class="swatch err"></i>ผิด</span>
+    </div>
+    <div class="pace-frame">
+      <svg class="pace" viewBox="0 0 ${width} ${height}" role="img" aria-label="ความเร็วรายวินาที สูงสุด ${Math.round(wpmPeak)} คำต่อนาที ผิด ${errorTotal} ครั้ง">
+        <text class="pace-name" text-anchor="middle" transform="translate(16 ${top + plotH / 2}) rotate(-90)">คำต่อนาที</text>
+        <text class="pace-name" text-anchor="middle" transform="translate(${width - 14} ${top + plotH / 2}) rotate(90)">ผิด</text>
+        ${grids.join("")}
+        <line class="pace-avg" x1="${left}" y1="${avgY.toFixed(1)}" x2="${left + plotW}" y2="${avgY.toFixed(1)}" />
+        <polyline class="pace-raw" points="${line("raw")}" />
+        <polyline class="pace-wpm" points="${line("wpm")}" />
+        ${dots}
+        ${errors}
+        <line class="pace-guide" x1="0" y1="${top}" x2="0" y2="${top + plotH}" hidden />
+        <circle class="pace-hover" r="5" cx="0" cy="0" hidden />
+        <rect class="pace-hit" x="${left}" y="${top}" width="${plotW}" height="${plotH}" />
+      </svg>
+      <div class="pace-tip" hidden></div>
+    </div>
+  `;
+}
+
+function bindChartHover(): void {
+  const svg = resultsEl.querySelector<SVGSVGElement>(".pace");
+  const tip = resultsEl.querySelector<HTMLElement>(".pace-tip");
+  const guide = resultsEl.querySelector<SVGLineElement>(".pace-guide");
+  const hover = resultsEl.querySelector<SVGCircleElement>(".pace-hover");
+  const hit = svg?.querySelector(".pace-hit");
+  if (!svg || !tip || !guide || !hover || !hit) return;
+  const dots = [...svg.querySelectorAll<SVGCircleElement>(".pace-dot")].map((dot) => ({
+    x: Number(dot.getAttribute("cx") ?? 0),
+    y: Number(dot.getAttribute("cy") ?? 0),
+    wpm: dot.dataset.wpm ?? "0",
+    raw: dot.dataset.raw ?? "0",
+    errors: dot.dataset.errors ?? "0",
+  }));
+  if (dots.length === 0) return;
+  const plotLeft = Number(hit.getAttribute("x") ?? 78);
+  const plotWidth = Number(hit.getAttribute("width") ?? 636);
+  const from = { x: dots[0].x, y: dots[0].y };
+  const to = { x: from.x, y: from.y };
+  const origin = { x: from.x, y: from.y };
+  let startedAt = 0;
+  let raf = 0;
+  let visible = false;
+  let lastSec = -1;
+  const glideMs = 420;
+
+  const place = (x: number, y: number) => {
+    const text = x.toFixed(1);
+    guide.setAttribute("x1", text);
+    guide.setAttribute("x2", text);
+    hover.setAttribute("cx", text);
+    hover.setAttribute("cy", y.toFixed(1));
+    const viewW = svg.viewBox.baseVal.width || 760;
+    const viewH = svg.viewBox.baseVal.height || 228;
+    const rect = svg.getBoundingClientRect();
+    const px = (x / viewW) * rect.width;
+    const py = (y / viewH) * rect.height;
+    const gap = 8;
+    const tipW = tip.offsetWidth;
+    const tipH = tip.offsetHeight;
+    let left = px - tipW - gap;
+    if (left < 0) left = px + gap;
+    left = Math.max(0, Math.min(left, rect.width - tipW));
+    const top = Math.max(0, Math.min(py - tipH / 2, rect.height - tipH));
+    tip.style.left = `${left}px`;
+    tip.style.top = `${top}px`;
+  };
+
+  const step = (now: number) => {
+    const t = Math.min(1, (now - startedAt) / glideMs);
+    const eased = 1 - (1 - t) ** 3;
+    from.x = origin.x + (to.x - origin.x) * eased;
+    from.y = origin.y + (to.y - origin.y) * eased;
+    place(from.x, from.y);
+    if (t < 1) raf = requestAnimationFrame(step);
+    else raf = 0;
+  };
+
+  const glideTo = (x: number, y: number) => {
+    origin.x = from.x;
+    origin.y = from.y;
+    to.x = x;
+    to.y = y;
+    startedAt = performance.now();
+    if (!raf) raf = requestAnimationFrame(step);
+  };
+
+  const hide = () => {
+    if (raf) cancelAnimationFrame(raf);
+    raf = 0;
+    visible = false;
+    lastSec = -1;
+    tip.hidden = true;
+    guide.setAttribute("hidden", "");
+    hover.setAttribute("hidden", "");
+  };
+
+  const show = (clientX: number) => {
+    const rect = svg.getBoundingClientRect();
+    const viewW = svg.viewBox.baseVal.width || 760;
+    const viewX = ((clientX - rect.left) / rect.width) * viewW;
+    if (viewX < plotLeft || viewX > plotLeft + plotWidth) {
+      hide();
+      return;
+    }
+    const along = ((viewX - plotLeft) / plotWidth) * dots.length;
+    const sec = Math.min(dots.length, Math.max(1, Math.round(along)));
+    const point = dots[sec - 1];
+    if (!visible) {
+      from.x = point.x;
+      from.y = point.y;
+      to.x = point.x;
+      to.y = point.y;
+      visible = true;
+      lastSec = sec;
+      guide.removeAttribute("hidden");
+      hover.removeAttribute("hidden");
+      tip.hidden = false;
+      tip.innerHTML = `<p class="pace-tip-time">วินาทีที่ ${sec}</p><p>ความเร็ว <strong>${point.wpm}</strong></p><p>ความเร็วดิบ <strong>${point.raw}</strong></p><p class="pace-tip-err">ผิด <strong>${point.errors}</strong></p>`;
+      place(from.x, from.y);
+      return;
+    }
+    if (sec === lastSec) return;
+    lastSec = sec;
+    tip.innerHTML = `<p class="pace-tip-time">วินาทีที่ ${sec}</p><p>ความเร็ว <strong>${point.wpm}</strong></p><p>ความเร็วดิบ <strong>${point.raw}</strong></p><p class="pace-tip-err">ผิด <strong>${point.errors}</strong></p>`;
+    glideTo(point.x, point.y);
+  };
+
+  svg.addEventListener("pointermove", (event) => show(event.clientX));
+  svg.addEventListener("pointerleave", hide);
 }
 
 function renderResults(): void {
@@ -345,7 +526,7 @@ function renderResults(): void {
     </div>
     ${record}
     ${prior}
-    <div class="chart-wrap">${chartSvg(session.samples)}</div>
+    <div class="chart-wrap">${chartHtml(session.pace, wpm)}</div>
     <p class="stat-strip"><span>ความเร็วดิบ <strong>${Math.round(rawWpm(session, elapsed))}</strong></span><span>สม่ำเสมอ <strong>${Math.round(consistencyOf(session.samples))}%</strong></span><span>ถูก <strong>${chars.correct}</strong> · ผิด <strong>${chars.incorrect}</strong> · เกิน <strong>${chars.extra}</strong>${skipped > 0 ? ` · ข้าม <strong>${skipped}</strong>` : ""}</span></p>
     ${recap}
     ${
@@ -360,6 +541,7 @@ function renderResults(): void {
       ${slow.length ? `<button type="button" class="btn ghost" id="slow-drill">ซ้อมคำที่ช้า</button>` : ""}
     </div>
   `;
+  bindChartHover();
 }
 
 function recapHtml(): string {
