@@ -37,12 +37,21 @@ export interface Session {
   isRecord: boolean;
   bestWpm: number;
   priorWpm: number;
+  timed: boolean;
+  wordGoal: number;
+  noLoop: boolean;
 }
 
 const PEEK_IDLE_MS = 800;
 const MAX_EXTRA = 24;
 
-export function createSession(queue: Token[], durationSec: number, glossMode: GlossMode, banner = ""): Session {
+export function createSession(
+  queue: Token[],
+  durationSec: number,
+  glossMode: GlossMode,
+  banner = "",
+  limit: { timed?: boolean; wordGoal?: number; noLoop?: boolean } = {},
+): Session {
   const session: Session = {
     words: [],
     index: 0,
@@ -65,6 +74,9 @@ export function createSession(queue: Token[], durationSec: number, glossMode: Gl
     isRecord: false,
     bestWpm: 0,
     priorWpm: 0,
+    timed: limit.timed !== false,
+    wordGoal: limit.wordGoal ?? 0,
+    noLoop: limit.noLoop === true,
   };
   fillAhead(session, 80);
   return session;
@@ -72,7 +84,9 @@ export function createSession(queue: Token[], durationSec: number, glossMode: Gl
 
 function fillAhead(session: Session, targetAhead: number): void {
   if (session.queue.length === 0) return;
-  while (session.words.length < session.index + targetAhead) {
+  const limit = session.wordGoal > 0 ? session.wordGoal : Number.POSITIVE_INFINITY;
+  while (session.words.length < Math.min(session.index + targetAhead, limit)) {
+    if (session.noLoop && session.queuePos >= session.queue.length) return;
     const token = session.queue[session.queuePos % session.queue.length];
     session.queuePos += 1;
     session.words.push({
@@ -159,9 +173,18 @@ export function slowWords(session: Session): Token[] {
     .map((word) => ({ en: word.token.en, th: word.token.th }));
 }
 
+export function skippedChars(session: Session): number {
+  let count = 0;
+  for (const word of session.words) {
+    if (!word.completed) break;
+    count += Math.max(0, word.token.en.length - word.typed.length);
+  }
+  return count;
+}
+
 export function accuracyOf(session: Session): number {
   const correct = correctCharCount(session);
-  const total = correct + session.incorrectChars;
+  const total = correct + session.incorrectChars + skippedChars(session);
   if (total === 0) return 100;
   return (correct / total) * 100;
 }
@@ -208,7 +231,9 @@ function finish(session: Session, now: number): void {
   const word = session.words[session.index];
   if (word && !word.completed) noteMiss(session, word);
   session.phase = "finished";
-  const elapsed = session.startedAt == null ? session.durationMs : Math.min(session.durationMs, now - session.startedAt);
+  const raw = session.startedAt == null ? session.durationMs : now - session.startedAt;
+  const elapsed = session.timed ? Math.min(session.durationMs, raw) : raw;
+  session.durationMs = elapsed;
   const value = wpmAt(correctCharCount(session), elapsed);
   const slots = Math.round(session.durationMs / 1000);
   while (session.samples.length < slots) session.samples.push(value);
@@ -225,7 +250,7 @@ function ensureRunning(session: Session, now: number): void {
 export function tick(session: Session, now: number): void {
   if (session.phase !== "running" || session.startedAt == null) return;
   const elapsed = now - session.startedAt;
-  if (elapsed >= session.durationMs) {
+  if (session.timed && elapsed >= session.durationMs) {
     finish(session, now);
     return;
   }
@@ -283,6 +308,10 @@ export function commitWord(session: Session, now: number): boolean {
   word.completed = true;
   noteMiss(session, word);
   session.index += 1;
+  if (session.wordGoal > 0 && session.index >= session.wordGoal) {
+    finish(session, now);
+    return true;
+  }
   fillAhead(session, 80);
   return true;
 }

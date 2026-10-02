@@ -1722,6 +1722,27 @@ export function taleQueue(level: Level): Token[] {
   return packs[level].tales.flat();
 }
 
+export function taleGroups(level: Level): { title: string; tokens: Token[] }[] {
+  const groups: { title: string; tokens: Token[] }[] = [];
+  for (const sentence of packs[level].tales) {
+    const title = sentence[0]?.tale ?? "";
+    let group = groups.find((item) => item.title === title);
+    if (!group) {
+      group = { title, tokens: [] };
+      groups.push(group);
+    }
+    group.tokens.push(...sentence);
+  }
+  return groups;
+}
+
+export function taleLabel(title: string): string {
+  if (title.includes("สิงโต")) return "สิงโต";
+  if (title.includes("เต่า")) return "เต่า";
+  if (title.includes("ผ้าคลุม")) return "ผ้าคลุม";
+  return title;
+}
+
 export function wordQueue(level: Level): Token[] {
   const unique = new Map<string, Token>();
   for (const token of packs[level].sentences.flat()) {

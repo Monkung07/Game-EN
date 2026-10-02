@@ -1,4 +1,4 @@
-import { LEVELS, type Best, type Duration, type GlossMode, type Level, type SourceMode, type Store, type Token, type WeakWord } from "./types";
+import { LEVELS, type Best, type Duration, type GlossMode, type Level, type Store, type TestMode, type Token, type WeakWord, type WordCount } from "./types";
 
 const KEY = "typegloss";
 
@@ -9,8 +9,10 @@ const defaults: Store = {
   slow: [],
   bests: {},
   duration: 30,
+  wordCount: 25,
+  quote: 0,
   gloss: "focus",
-  source: "sentences",
+  testMode: "time",
   level: "A1",
 };
 
@@ -39,8 +41,10 @@ export function loadStore(): Store {
       slow: Array.isArray(parsed.slow) ? parsed.slow.filter(isWeak) : [],
       bests: readBests(parsed.bests),
       duration: parsed.duration === 15 || parsed.duration === 30 || parsed.duration === 60 ? parsed.duration : 30,
+      wordCount: parsed.wordCount === 10 || parsed.wordCount === 25 || parsed.wordCount === 50 || parsed.wordCount === 100 ? parsed.wordCount : 25,
+      quote: parsed.quote === 1 || parsed.quote === 2 ? parsed.quote : 0,
       gloss: parsed.gloss === "full" || parsed.gloss === "focus" || parsed.gloss === "peek" ? parsed.gloss : "focus",
-      source: parsed.source === "words" || parsed.source === "sentences" || parsed.source === "tales" ? parsed.source : "sentences",
+      testMode: readMode(parsed),
       level: typeof parsed.level === "string" && (LEVELS as readonly string[]).includes(parsed.level) ? (parsed.level as Level) : "A1",
     };
   } catch {
@@ -52,13 +56,23 @@ function freshStore(): Store {
   return { ...defaults, weak: [], slow: [], bests: {} };
 }
 
+function readMode(parsed: Partial<Store> & { source?: string }): TestMode {
+  if (parsed.testMode === "time" || parsed.testMode === "words" || parsed.testMode === "quote" || parsed.testMode === "weak" || parsed.testMode === "slow") {
+    return parsed.testMode;
+  }
+  if (parsed.source === "words") return "words";
+  if (parsed.source === "tales") return "quote";
+  return "time";
+}
+
 function readBests(value: unknown): Record<string, Best> {
   if (!value || typeof value !== "object") return {};
   const bests: Record<string, Best> = {};
   for (const [key, item] of Object.entries(value)) {
+    const migrated = key.startsWith("sentences:") ? `time:${key.slice("sentences:".length)}` : key;
     if (!item || typeof item !== "object") continue;
     const best = item as Best;
-    if (typeof best.wpm === "number" && typeof best.acc === "number") bests[key] = { wpm: best.wpm, acc: best.acc };
+    if (typeof best.wpm === "number" && typeof best.acc === "number") bests[migrated] = { wpm: best.wpm, acc: best.acc };
   }
   return bests;
 }
@@ -126,12 +140,21 @@ export function saveStore(store: Store): void {
   localStorage.setItem(KEY, JSON.stringify(store));
 }
 
-export function saveSettings(duration: Duration, gloss: GlossMode, source: SourceMode, level: Level): Store {
+export function saveSettings(
+  duration: Duration,
+  gloss: GlossMode,
+  testMode: TestMode,
+  level: Level,
+  wordCount: WordCount,
+  quote: number,
+): Store {
   const store = loadStore();
   store.duration = duration;
   store.gloss = gloss;
-  store.source = source;
+  store.testMode = testMode;
   store.level = level;
+  store.wordCount = wordCount;
+  store.quote = quote;
   saveStore(store);
   return store;
 }
@@ -170,19 +193,19 @@ function pushWords(bank: WeakWord[], tokens: Token[]): void {
   bank.splice(80);
 }
 
-export function bestKey(source: SourceMode, level: Level, duration: Duration): string {
-  return `${source}:${level}:${duration}`;
+export function bestKey(mode: TestMode, level: Level, limit: number): string {
+  return `${mode}:${level}:${limit}`;
 }
 
 export function recordBest(
-  source: SourceMode,
+  mode: TestMode,
   level: Level,
-  duration: Duration,
+  limit: number,
   wpm: number,
   acc: number,
 ): { store: Store; isRecord: boolean; bestWpm: number } {
   const store = loadStore();
-  const key = bestKey(source, level, duration);
+  const key = bestKey(mode, level, limit);
   const prev = store.bests[key];
   const isRecord = wpm > 0 && (!prev || wpm > prev.wpm);
   if (isRecord) {

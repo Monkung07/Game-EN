@@ -1,7 +1,8 @@
-import { assertContent, drillQueue, sentenceQueue, taleQueue, wordQueue } from "./content";
+import { assertContent, drillQueue, sentenceQueue, taleGroups, taleLabel, wordQueue } from "./content";
 import {
   accuracyOf,
   backspace,
+  skippedChars,
   charStats,
   commitWord,
   consistencyOf,
@@ -20,7 +21,7 @@ import {
 } from "./engine";
 import { sceneView } from "./scenes";
 import { addSlow, addWeak, dueTokens, gradeBanks, loadStore, recordBest, recordPractice, saveSettings } from "./storage";
-import { LEVELS, type Duration, type GlossMode, type Level, type SourceMode, type Store, type Token } from "./types";
+import { LEVELS, type Duration, type GlossMode, type Level, type Store, type TestMode, type Token, type WordCount } from "./types";
 
 assertContent();
 
@@ -51,9 +52,18 @@ let lastSecond = -1;
 let handledAt = 0;
 
 function beginQueue(): Session {
-  const queue =
-    store.source === "words" ? wordQueue(store.level) : store.source === "tales" ? taleQueue(store.level) : sentenceQueue(store.level);
-  return createSession(queue, store.duration, store.gloss);
+  if (store.testMode === "weak") return createSession(drillQueue(store.weak), store.duration, store.gloss, "ซ้อมคำอ่อน");
+  if (store.testMode === "slow") return createSession(drillQueue(store.slow), store.duration, store.gloss, "ซ้อมคำช้า");
+  if (store.testMode === "words") {
+    return createSession(wordQueue(store.level), store.duration, store.gloss, "", { timed: false, wordGoal: store.wordCount });
+  }
+  if (store.testMode === "quote") {
+    const groups = taleGroups(store.level);
+    const group = groups[Math.min(store.quote, Math.max(groups.length - 1, 0))];
+    const tokens = group?.tokens ?? [];
+    return createSession(tokens, store.duration, store.gloss, "", { timed: false, wordGoal: tokens.length, noLoop: true });
+  }
+  return createSession(sentenceQueue(store.level), store.duration, store.gloss);
 }
 
 function beginDrill(tokens: Token[], banner: string): void {
@@ -72,7 +82,9 @@ function replaySet(): void {
   const tokens = playedTokens(session);
   if (tokens.length === 0) return;
   const prior = wpmAt(correctCharCount(session), session.durationMs);
-  const next = createSession(tokens, store.duration, store.gloss);
+  const next = session.timed
+    ? createSession(tokens, store.duration, store.gloss)
+    : createSession(tokens, store.duration, store.gloss, "", { timed: false, wordGoal: tokens.length, noLoop: true });
   next.priorWpm = prior;
   session = next;
   render();
@@ -94,7 +106,8 @@ function persist(finished: Session): void {
   store = gradeBanks(scheduleItems(finished));
   if (!finished.banner) {
     const elapsed = finished.durationMs;
-    const saved = recordBest(store.source, store.level, store.duration, wpmAt(correctCharCount(finished), elapsed), accuracyOf(finished));
+    const limit = store.testMode === "words" ? store.wordCount : store.testMode === "quote" ? store.quote : store.duration;
+    const saved = recordBest(store.testMode, store.level, limit, wpmAt(correctCharCount(finished), elapsed), accuracyOf(finished));
     store = saved.store;
     finished.isRecord = saved.isRecord;
     finished.bestWpm = saved.bestWpm;
@@ -160,36 +173,59 @@ function playedTokens(finished: Session): Token[] {
   return tokens;
 }
 
-function renderConfig(): void {
+function limitButtons(): string {
+  if (store.testMode === "words") {
+    const counts: WordCount[] = [10, 25, 50, 100];
+    return counts.map((count) => btn(`${count}`, store.wordCount === count, `data-count="${count}"`)).join("");
+  }
+  if (store.testMode === "quote") {
+    return taleGroups(store.level)
+      .map((group, index) => btn(taleLabel(group.title), store.quote === index, `data-quote="${index}"`))
+      .join("");
+  }
   const times: Duration[] = [15, 30, 60];
+  return times.map((time) => btn(`${time} วิ`, store.duration === time, `data-time="${time}"`)).join("");
+}
+
+function limitLabel(): string {
+  if (store.testMode === "words") return "จำนวน";
+  if (store.testMode === "quote") return "เรื่อง";
+  return "เวลา";
+}
+
+function renderConfig(): void {
   const glosses: [GlossMode, string][] = [
     ["full", "เห็นทุกคำ"],
     ["focus", "ทีละคำ"],
     ["peek", "ซ่อนไว้"],
   ];
-  const sources: [SourceMode, string][] = [
-    ["sentences", "ประโยค"],
-    ["words", "คำเดี่ยว"],
-    ["tales", "นิทาน"],
+  const modes: [TestMode, string, boolean][] = [
+    ["time", "เวลา", false],
+    ["words", "คำ", false],
+    ["quote", "นิทาน", false],
+    ["weak", "ซ้อมคำอ่อน", store.weak.length === 0],
+    ["slow", "ซ้อมคำช้า", store.slow.length === 0],
   ];
   const levelOptions = LEVELS.map(
     (level) => `<option value="${level}"${store.level === level ? " selected" : ""}>${level}</option>`,
   ).join("");
+  const limit =
+    store.testMode === "time" || store.testMode === "words" || store.testMode === "quote"
+      ? segment(limitLabel(), limitButtons(), "time")
+      : "";
   configEl.innerHTML = [
-    segment("โหมด", sources.map(([id, label]) => btn(label, store.source === id, `data-source="${id}"`)).join(""), "mode"),
-    segment("เวลา", times.map((time) => btn(`${time} วิ`, store.duration === time, `data-time="${time}"`)).join(""), "time"),
-    segment("คำแปล", glosses.map(([id, label]) => btn(label, store.gloss === id, `data-gloss="${id}"`)).join(""), "gloss"),
+    `<div class="controls-line">`,
     `<div class="control" data-slot="level"><label class="control-label" for="level">ระดับ</label><div class="segment"><select id="level" class="level-select">${levelOptions}</select></div></div>`,
+    segment("โหมด", modes.map(([id, label, disabled]) => btn(label, store.testMode === id, `data-mode="${id}"`, disabled)).join(""), "mode"),
+    segment("คำแปล", glosses.map(([id, label]) => btn(label, store.gloss === id, `data-gloss="${id}"`)).join(""), "gloss"),
+    limit,
+    `</div>`,
     `<p class="control-note">${glossNote()}</p>`,
   ].join("");
 
   const due = dueTokens(store);
-  const weakDisabled = store.weak.length === 0;
-  const slowDisabled = store.slow.length === 0;
   miniEl.innerHTML = [
     due.length > 0 ? `<button type="button" class="chip btn ghost" id="review">ทบทวนวันนี้ ${due.length}</button>` : "",
-    `<button type="button" class="chip btn ghost" id="weak"${weakDisabled ? " disabled" : ""}>ซ้อมคำอ่อน ${store.weak.length}</button>`,
-    `<button type="button" class="chip btn ghost" id="slow"${slowDisabled ? " disabled" : ""}>ซ้อมคำช้า ${store.slow.length}</button>`,
     `<span class="chip streak${store.streak === 0 ? " cold" : ""}" aria-label="สตรีค ${store.streak} วัน"><svg class="flame" viewBox="0 0 16 16" aria-hidden="true"><path d="M8.2 1.2c.3 1.8-.2 3-1.1 4-.4-1.3-1.5-2-1.5-2C4.2 4.6 3 6.4 3 8.4 3 11.2 5.2 13.5 8 13.5s5-2.3 5-5.1c0-2.4-1.5-4-2.6-5.2-.2 1.3-1 2.2-1.7 2.6.4-1.6.2-3.3-.5-4.6Z"/></svg>${store.streak}</span>`,
   ].join("");
 }
@@ -283,7 +319,9 @@ function renderResults(): void {
   const wpm = wpmAt(correctCharCount(session), elapsed);
   const acc = accuracyOf(session);
   const chars = charStats(session);
+  const skipped = skippedChars(session);
   const slow = slowWords(session);
+  const recap = recapHtml();
   const misses = session.missed
     .map(
       (item) =>
@@ -302,13 +340,14 @@ function renderResults(): void {
   resultsEl.innerHTML = `
     <div class="result-grid">
       <article class="stat"><span>ความเร็ว</span><strong>${Math.round(wpm)}</strong><small>คำต่อนาที</small></article>
-      <article class="stat"><span>ความแม่น</span><strong>${acc.toFixed(0)}%</strong><small>จากปุ่มที่กดถูก</small></article>
+      <article class="stat"><span>ความแม่น</span><strong>${acc.toFixed(0)}%</strong><small>ตัวที่ข้ามนับเป็นผิด</small></article>
       <article class="stat"><span>สตรีค</span><strong>${store.streak}</strong><small>วันติดกัน</small></article>
     </div>
     ${record}
     ${prior}
     <div class="chart-wrap">${chartSvg(session.samples)}</div>
-    <p class="stat-strip"><span>ความเร็วดิบ <strong>${Math.round(rawWpm(session, elapsed))}</strong></span><span>สม่ำเสมอ <strong>${Math.round(consistencyOf(session.samples))}%</strong></span><span>ถูก <strong>${chars.correct}</strong> · ผิด <strong>${chars.incorrect}</strong> · เกิน <strong>${chars.extra}</strong></span></p>
+    <p class="stat-strip"><span>ความเร็วดิบ <strong>${Math.round(rawWpm(session, elapsed))}</strong></span><span>สม่ำเสมอ <strong>${Math.round(consistencyOf(session.samples))}%</strong></span><span>ถูก <strong>${chars.correct}</strong> · ผิด <strong>${chars.incorrect}</strong> · เกิน <strong>${chars.extra}</strong>${skipped > 0 ? ` · ข้าม <strong>${skipped}</strong>` : ""}</span></p>
+    ${recap}
     ${
       session.missed.length
         ? `<div><p class="miss-title">คำที่ยังไม่คล่อง ${session.missed.length}</p><ul class="missed">${misses}</ul></div>`
@@ -323,16 +362,37 @@ function renderResults(): void {
   `;
 }
 
+function recapHtml(): string {
+  const items: string[] = [];
+  for (const word of session.words) {
+    if (!word.completed && word.typed.length === 0) break;
+    const miss = word.typed !== word.token.en;
+    const end = word.token.sentenceEnd ? " end" : "";
+    items.push(
+      `<span class="recap-word${miss ? " miss" : ""}${end}"><span class="th">${esc(word.token.th)}</span><span class="en">${esc(word.token.en)}</span></span>`,
+    );
+  }
+  if (items.length === 0) return "";
+  return `<div class="recap"><p class="miss-title">คำในรอบนี้</p><div class="recap-words">${items.join("")}</div></div>`;
+}
+
 function updateMeter(now: number): void {
   const finished = session.phase === "finished";
   meterEl.hidden = finished;
   if (finished) return;
+  const elapsed = session.startedAt == null ? 0 : now - session.startedAt;
+  const wpm = session.phase === "running" && elapsed >= 1000 ? ` · ${Math.round(wpmAt(correctCharCount(session), elapsed))} คำต่อนาที` : "";
+  if (!session.timed && session.wordGoal > 0) {
+    const left = Math.max(0, session.wordGoal - session.index);
+    const ratio = session.phase === "ready" ? 1 : left / session.wordGoal;
+    meterFill.style.transform = `scaleX(${Math.max(0, Math.min(1, ratio))})`;
+    liveEl.textContent = session.phase === "running" ? `เหลือ ${left} คำ${wpm}` : "พิมพ์ตัวแรกเพื่อเริ่ม";
+    return;
+  }
   const ratio = session.phase === "ready" ? 1 : remainingMs(session, now) / session.durationMs;
   meterFill.style.transform = `scaleX(${Math.max(0, Math.min(1, ratio))})`;
   if (session.phase === "running" && session.startedAt != null) {
     const secs = Math.ceil(remainingMs(session, now) / 1000);
-    const elapsed = now - session.startedAt;
-    const wpm = elapsed >= 1000 ? ` · ${Math.round(wpmAt(correctCharCount(session), elapsed))} คำต่อนาที` : "";
     liveEl.textContent = `เหลือ ${secs} วินาที${wpm}`;
   } else {
     liveEl.textContent = "พิมพ์ตัวแรกเพื่อเริ่มจับเวลา";
@@ -440,6 +500,7 @@ function onKeyDown(event: KeyboardEvent): void {
   if (event.key === " ") {
     event.preventDefault();
     markHandled();
+    if (event.repeat) return;
     const now = performance.now();
     commitWord(session, now);
     afterInput(now);
@@ -485,24 +546,42 @@ function onBeforeInput(event: InputEvent): void {
 configEl.addEventListener("click", (event) => {
   const target = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
   if (!target) return;
-  const source = target.dataset.source as SourceMode | undefined;
+  const mode = target.dataset.mode as TestMode | undefined;
   const time = target.dataset.time;
+  const count = target.dataset.count;
+  const quote = target.dataset.quote;
   const gloss = target.dataset.gloss as GlossMode | undefined;
-  if (source && source !== store.source) {
-    store = saveSettings(store.duration, store.gloss, source, store.level);
+  if (mode && !target.disabled && mode !== store.testMode) {
+    store = saveSettings(store.duration, store.gloss, mode, store.level, store.wordCount, store.quote);
     restart();
     return;
   }
   if (time) {
     const duration = Number(time) as Duration;
     if (duration !== store.duration) {
-      store = saveSettings(duration, store.gloss, store.source, store.level);
+      store = saveSettings(duration, store.gloss, store.testMode, store.level, store.wordCount, store.quote);
+      restart();
+    } else focusCatcher();
+    return;
+  }
+  if (count) {
+    const wordCount = Number(count) as WordCount;
+    if (wordCount !== store.wordCount) {
+      store = saveSettings(store.duration, store.gloss, store.testMode, store.level, wordCount, store.quote);
+      restart();
+    } else focusCatcher();
+    return;
+  }
+  if (quote) {
+    const index = Number(quote);
+    if (index !== store.quote) {
+      store = saveSettings(store.duration, store.gloss, store.testMode, store.level, store.wordCount, index);
       restart();
     } else focusCatcher();
     return;
   }
   if (gloss && gloss !== store.gloss) {
-    store = saveSettings(store.duration, gloss, store.source, store.level);
+    store = saveSettings(store.duration, gloss, store.testMode, store.level, store.wordCount, store.quote);
     session.glossMode = gloss;
     render();
   }
@@ -517,7 +596,7 @@ configEl.addEventListener("change", (event) => {
     focusCatcher();
     return;
   }
-  store = saveSettings(store.duration, store.gloss, store.source, level);
+  store = saveSettings(store.duration, store.gloss, store.testMode, level, store.wordCount, store.quote);
   restart();
 });
 
@@ -525,8 +604,6 @@ miniEl.addEventListener("click", (event) => {
   const target = (event.target as HTMLElement).closest<HTMLButtonElement>("button");
   if (!target) return;
   if (target.id === "review") beginDrill(dueTokens(store), "ทบทวนวันนี้");
-  if (target.id === "weak" && store.weak.length > 0) beginDrill(store.weak, "ซ้อมคำอ่อน");
-  if (target.id === "slow" && store.slow.length > 0) beginDrill(store.slow, "ซ้อมคำช้า");
 });
 
 document.querySelector("#restart")!.addEventListener("click", () => restart());

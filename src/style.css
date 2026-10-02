@@ -83,7 +83,7 @@ button {
 }
 
 .top {
-  width: min(920px, 100%);
+  width: min(1120px, 100%);
   display: flex;
   justify-content: space-between;
   align-items: center;
@@ -178,16 +178,31 @@ button {
 }
 
 .controls {
-  width: min(920px, 100%);
+  width: min(1120px, 100%);
   display: flex;
-  flex-wrap: wrap;
-  justify-content: flex-start;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 0.45rem;
+  container-type: inline-size;
+}
+
+.controls-line {
+  display: flex;
+  flex-wrap: nowrap;
   align-items: center;
-  gap: 0.4rem 0.6rem;
+  gap: 0.7rem;
+  max-width: 100%;
+}
+
+.controls-line > .control {
+  flex: none;
+}
+
+.controls-line .segment {
+  flex-wrap: nowrap;
 }
 
 .control-note {
-  flex: 1 0 100%;
   margin: 0;
   color: var(--muted);
   font-size: 0.82rem;
@@ -228,6 +243,11 @@ button {
   box-shadow: 0 1px 2px rgba(50, 36, 16, 0.08);
 }
 
+.text-btn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
 .text-btn:focus-visible,
 .chip:focus-visible,
 #restart:focus-visible,
@@ -237,7 +257,7 @@ button {
 }
 
 main {
-  width: min(920px, 100%);
+  width: min(1120px, 100%);
   flex: 1;
   display: flex;
 }
@@ -464,7 +484,7 @@ body.has-scene .mask {
 
 #hint {
   margin: 0;
-  width: min(920px, 100%);
+  width: min(1120px, 100%);
   color: var(--muted);
   font-size: 0.9rem;
 }
@@ -616,6 +636,45 @@ body.finished #restart {
   padding: 0.7rem 0.85rem;
 }
 
+.recap-words {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: 0.45rem 0.7rem;
+  max-height: 16rem;
+  overflow: auto;
+  padding-top: 0.15rem;
+}
+
+.recap-word {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.02rem;
+}
+
+.recap-word.end {
+  margin-right: 0.85rem;
+}
+
+.recap-word .th {
+  font-family: var(--font-th);
+  font-size: 0.82rem;
+  line-height: 1.15rem;
+  color: var(--gloss);
+  white-space: nowrap;
+}
+
+.recap-word .en {
+  font-size: 1.05rem;
+  line-height: 1.3rem;
+  color: var(--typed);
+}
+
+.recap-word.miss .en {
+  color: var(--error);
+}
+
 .result-actions {
   display: flex;
   flex-wrap: wrap;
@@ -676,24 +735,20 @@ body.finished #restart {
   }
 }
 
-@media (max-width: 880px) {
-  .controls {
-    display: grid;
-    grid-template-columns: max-content max-content;
-    grid-template-areas:
-      "mode level"
-      "time gloss"
-      "note note";
-    justify-content: start;
-    align-items: end;
-    column-gap: 0.7rem;
-    row-gap: 0.55rem;
+@container (max-width: 1000px) {
+  .controls-line {
+    gap: 0.45rem;
   }
 
-  .control {
-    flex-direction: column;
-    align-items: flex-start;
-    gap: 0.22rem;
+  .text-btn {
+    padding-inline: 0.5rem;
+  }
+}
+
+@media (max-width: 880px) {
+  .controls-line {
+    flex-wrap: wrap;
+    row-gap: 0.55rem;
   }
 
   .segment {
@@ -702,24 +757,9 @@ body.finished #restart {
     min-height: 2.625rem;
   }
 
-  .control[data-slot="mode"] {
-    grid-area: mode;
-  }
-
-  .control[data-slot="level"] {
-    grid-area: level;
-  }
-
-  .control[data-slot="time"] {
-    grid-area: time;
-  }
-
-  .control[data-slot="gloss"] {
-    grid-area: gloss;
-  }
-
-  .control-note {
-    grid-area: note;
+  .control[data-slot="mode"] .segment {
+    flex-wrap: wrap;
+    max-width: 100%;
   }
 }
 
@@ -741,8 +781,8 @@ body.finished #restart {
     justify-content: flex-start;
   }
 
-  .controls {
-    column-gap: 0.35rem;
+  .controls-line {
+    gap: 0.35rem;
   }
 
   .text-btn {
